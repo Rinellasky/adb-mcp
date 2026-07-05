@@ -96,12 +96,46 @@ Bug fixed: setActiveDocument assigned a plain info dict to app.activeDocument
 ("Expecting type Document" error — can never have worked upstream). Now
 iterates app.documents and throws on unknown id. Verified live.
 
-## Phase 3 — NEXT (see Technical_Roadmap.md; adapt roadmap code samples,
-they use invalid ExtendScript APIs)
+## Phase 3 — DONE (2026-07-05, all tools live-verified visually on PS 2026)
 
-Priority order: vector/path tools, advanced layer styles (bevel/emboss,
-glow, satin), animation timeline (low priority per roadmap matrix). Always
-check existing tools in ps-mcp.py before adding.
+Layer styles (`commands/layer_styles.js`, shared setLayerEffect helper):
+add_bevel_emboss_layer_style, add_inner_glow_layer_style,
+add_outer_glow_layer_style, add_satin_layer_style (chromeFX),
+add_color_overlay_layer_style (solidFill). All also registered in
+BATCH_OPERATIONS. Animation timeline skipped (3/10 in roadmap matrix).
+
+Vector (`commands/shapes.js`, new): create_shape_layer (RECTANGLE with
+corner radius, ELLIPSE, LINE; fill + optional stroke; returns new layerId),
+create_path_from_points (named paths, bezier forward/backward handles,
+open/closed). LINE is a thin rectangle rotated into place — PS v22+
+rejects the 'line' contentLayer shape class with error -25920.
+
+## HARD-WON DEBUGGING LESSONS (cost a full day + several PS crashes)
+
+1. **Photoshop's scripting error dialog blocks batchPlay forever.** When a
+   batchPlay command errors with default dialog options, PS shows a modal
+   dialog titled with the plugin name ("Photoshop MCP Agent: The command
+   X is not currently available") and batchPlay does not return until a
+   human clicks OK. From the server side this looks like a hang/timeout,
+   and PS appears crashed. The dialog may sit behind other windows.
+   ALWAYS set `_options: {dialogOptions: "silent"}` on batchPlay
+   descriptors ("dontDisplay" did NOT suppress these).
+2. **With "silent", failures do not throw.** They come back as
+   `{_obj: "error", result: <code>, message}` entries in the batchPlay
+   results array. Check results and throw explicitly (see
+   throwOnBatchPlayError in shapes.js) or failures pass silently — a
+   failed `make` once caused the handler to rename the previously active
+   layer instead (data corruption, not just a missed error).
+3. **A dialog titled "Photoshop MCP Agent" is OUR plugin** (manifest name
+   matches the old uninstalled ccx). Do not chase stale-plugin theories
+   first; check for the blocking-dialog scenario above.
+4. **After Photoshop restarts, dev plugins are gone until re-loaded in UXP
+   Developer Tools**, but a generic connection error can also mean the
+   old wedged process is still alive — check `tasklist` for Photoshop.exe
+   and its PID before assuming a fresh instance.
+5. **In-plugin state (e.g. neural filter capture buffer) dies with PS or
+   plugin reload.** Persist captured data server-side immediately (the
+   background watcher pattern in scratchpad/nf_capture_watcher.py).
 
 ## Testing
 
