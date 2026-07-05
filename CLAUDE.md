@@ -76,16 +76,25 @@ are collected and processing continues; a lost connection aborts and marks the
 rest SKIPPED. Live-verified: batch set_layer_visibility (incl. bad-ID error
 path) and a two-step sequence replay.
 
-Neural filters (EXPERIMENTAL, `commands/neural_filters.js` + 4 Python tools):
-apply_neural_filter (generic envelope verified against Adobe's official
-neural-filter-sample repo), neural_style_transfer (params verbatim from that
-sample), start_neural_filter_capture / get_captured_neural_filters (records
-`neuralGalleryFilters` notification events for exact replay via
-raw_filter_stack). NOT yet live-tested: requires plugin reload in UXP Dev
-Tools, the filter must be downloaded in Filter > Neural Filters first, and
-per-filter spl:: value keys are version-sensitive — capture-then-replay is
-the reliable path. "Super Zoom" outputs to a new document and is known
-unreliable programmatically; no dedicated wrapper was built for it.
+Neural filters (`commands/neural_filters.js` + 8 Python tools). KEY FINDING
+(verified live on PS 2026 by pixel-diff): descriptors built from NF_UI_DATA
+alone (the 2021 Adobe sample format used by neural_style_transfer and the
+filter_id/values form) are ACCEPTED but SILENTLY NO-OP — modern Photoshop
+requires the compiled NF_SPL_GRAPH that only a real captured descriptor
+contains. The working flow is capture -> preset -> replay:
+start_neural_filter_capture, apply the filter once manually in Photoshop,
+save_captured_neural_filter("name"), then apply_neural_filter_preset("name",
+layer_id) replays it exactly (verified: ~111k px changed, style visibly
+applied). Presets persist in mcp/neural_filter_presets.json (gitignored).
+Capture buffer lives in plugin memory — lost on plugin reload/PS crash (one
+crash observed right after a manual filter run; programmatic replays did not
+crash). filter_id/values/raw_filter_stack forms kept as LEGACY for pre-2024
+builds. "Super Zoom" outputs to a new document, known unreliable
+programmatically; no wrapper.
+
+Bug fixed: setActiveDocument assigned a plain info dict to app.activeDocument
+("Expecting type Document" error — can never have worked upstream). Now
+iterates app.documents and throws on unknown id. Verified live.
 
 ## Phase 3 — NEXT (see Technical_Roadmap.md; adapt roadmap code samples,
 they use invalid ExtendScript APIs)
