@@ -2131,7 +2131,8 @@ def add_animation_frame(duration: float = 0.1):
     Adds a new frame to the frame animation timeline (duplicating the current
     frame's state) and makes it the current frame. Layer changes made after
     adding a frame (visibility, position, opacity) are recorded into that
-    frame.
+    frame. There is no tool to read the frame count back; track frames as
+    you add them.
 
     Args:
         duration (float): Frame delay in seconds (e.g. 0.1).
@@ -2192,18 +2193,6 @@ def create_animation_frames_from_layers():
     """
 
     command = createCommand("createAnimationFramesFromLayers", {})
-
-    return sendCommand(command)
-
-
-@mcp.tool()
-def get_animation_info():
-    """
-    Returns information about the document's frame animation: frame count,
-    current frame index and loop count.
-    """
-
-    command = createCommand("getAnimationInfo", {})
 
     return sendCommand(command)
 

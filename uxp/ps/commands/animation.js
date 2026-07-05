@@ -48,15 +48,12 @@ const silentPlay = async (descriptors, context) => {
 
 const createFrameAnimation = async (command) => {
     await execute(async () => {
+        // "make animationClass" is rejected (-25920) on PS 2026; the
+        // Timeline panel's Create Frame Animation records this event instead
         await silentPlay(
             [
                 {
-                    _obj: "make",
-                    _target: [
-                        {
-                            _ref: "animationClass",
-                        },
-                    ],
+                    _obj: "makeFrameAnimation",
                 },
             ],
             "createFrameAnimation"
@@ -68,12 +65,16 @@ const addAnimationFrame = async (command) => {
     let options = command.options;
 
     await execute(async () => {
+        // The timeline's new-frame button duplicates the current frame;
+        // "make animationFrameClass" is rejected (-25920) on PS 2026
         let commands = [
             {
-                _obj: "make",
+                _obj: "duplicate",
                 _target: [
                     {
                         _ref: "animationFrameClass",
+                        _enum: "ordinal",
+                        _value: "targetEnum",
                     },
                 ],
             },
@@ -171,46 +172,12 @@ const createAnimationFramesFromLayers = async (command) => {
     });
 };
 
-const getAnimationInfo = async (command) => {
-    let out = {};
-
-    await execute(async () => {
-        let results = await action.batchPlay(
-            [
-                {
-                    _obj: "get",
-                    _target: [
-                        {
-                            _ref: "animationClass",
-                            _enum: "ordinal",
-                            _value: "targetEnum",
-                        },
-                    ],
-                    _options: { dialogOptions: "silent" },
-                },
-            ],
-            {}
-        );
-
-        throwOnBatchPlayError(results, "getAnimationInfo");
-
-        let anim = results[0] || {};
-        out.frameCount = anim.numberOfFrames;
-        out.currentFrameIndex = anim.animationFrameIndex;
-        out.loopCount = anim.animationLoopCount;
-        out.raw = anim;
-    });
-
-    return out;
-};
-
 const commandHandlers = {
     createFrameAnimation,
     addAnimationFrame,
     selectAnimationFrame,
     setAnimationFrameDelay,
     createAnimationFramesFromLayers,
-    getAnimationInfo,
 };
 
 module.exports = {
