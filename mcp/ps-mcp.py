@@ -1848,6 +1848,141 @@ def smudge_stroke(
     return sendCommand(command)
 
 
+# Neural filters (Phase 2, EXPERIMENTAL)
+#
+# Descriptor envelope verified against Adobe's official neural-filter-sample.
+# Per-filter parameter keys are version-sensitive; the capture tools below
+# record real descriptors from a manual filter run for exact replay.
+
+@mcp.tool()
+def apply_neural_filter(
+    layer_id: int,
+    filter_id: str = "",
+    values: dict = {},
+    output_type: int = 2,
+    filter_version: str = "1.0",
+    raw_filter_stack: list = []):
+    """
+    EXPERIMENTAL. Applies a Photoshop Neural Filter to the specified layer via
+    batchPlay. The filter MUST already be downloaded and enabled in Photoshop
+    (Filter > Neural Filters gallery) or the command will fail.
+
+    Known filter ids include "internal.StyleTransfer" and "internal.Hazy"
+    (depth blur / haze). "Super Zoom" (super resolution) outputs to a new
+    document and is known to be unreliable when invoked programmatically.
+
+    If a filter run fails or applies with wrong parameters, use
+    start_neural_filter_capture + get_captured_neural_filters to record the
+    exact descriptor from a manual run, then replay it with raw_filter_stack.
+
+    Args:
+        layer_id (int): ID of the layer to apply the filter to.
+        filter_id (str): Neural filter identifier (e.g. "internal.StyleTransfer").
+            Ignored if raw_filter_stack is provided.
+        values (dict): Filter-specific parameter keys (e.g. "spl::style",
+            "spl::preserveColor" for style transfer). Omit to run the filter
+            with its default parameters.
+        output_type (int): NF_OUTPUT_TYPE value; 2 is the value used by
+            Adobe's official sample.
+        filter_version (str): Filter stack entry version (default "1.0").
+        raw_filter_stack (list): A complete spl::filterStack array (e.g.
+            captured with the capture tools) to replay exactly as recorded.
+            Takes precedence over filter_id/values.
+    """
+
+    options = {
+        "layerId": layer_id,
+        "outputType": output_type
+    }
+
+    if raw_filter_stack:
+        options["rawFilterStack"] = raw_filter_stack
+    else:
+        options["filterId"] = filter_id
+        options["values"] = values
+        options["filterVersion"] = filter_version
+
+    command = createCommand("applyNeuralFilter", options)
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def neural_style_transfer(
+    layer_id: int,
+    style: str = "style28_crop",
+    preserve_color: bool = False,
+    strength: int = 100,
+    brush_size: int = 100,
+    blur: int = 0):
+    """
+    EXPERIMENTAL. Applies the Style Transfer neural filter to the specified
+    layer. The Style Transfer filter MUST already be downloaded in Photoshop
+    (Filter > Neural Filters gallery) or the command will fail. The result is
+    output to a new layer.
+
+    Args:
+        layer_id (int): ID of the layer to apply style transfer to.
+        style (str): Built-in style preset name. Presets follow the pattern
+            "style<N>_crop" (e.g. "style28_crop").
+        preserve_color (bool): Keep the original image colors.
+        strength (int): Style strength / preserve weight (0 to 100).
+        brush_size (int): Stroke size of the transferred style (0 to 100).
+        blur (int): Amount of blur applied to the style (0 to 100).
+    """
+
+    command = createCommand("applyNeuralFilter", {
+        "layerId": layer_id,
+        "outputType": 2,
+        "filterId": "internal.StyleTransfer",
+        "filterVersion": "1.0",
+        "values": {
+            "spl::brushSize": brush_size,
+            "spl::preserveColor": preserve_color,
+            "spl::preserveWeight": strength,
+            "spl::refImageAndCrop": None,
+            "spl::sliderBlur": blur,
+            "spl::sliderBrightness": None,
+            "spl::sliderMultipleIterations": 0,
+            "spl::sliderSaturation": None,
+            "spl::style": style,
+            "spl::style_transfer_option": "style_transfer"
+        }
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def start_neural_filter_capture():
+    """
+    EXPERIMENTAL. Starts recording Neural Filter descriptors. After calling
+    this, apply a neural filter manually in Photoshop (Filter > Neural
+    Filters); every application fires an event whose descriptor is recorded.
+    Read the recordings with get_captured_neural_filters and replay them via
+    apply_neural_filter's raw_filter_stack argument. Calling this again clears
+    previously captured events.
+    """
+
+    command = createCommand("startNeuralFilterCapture", {})
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_captured_neural_filters():
+    """
+    EXPERIMENTAL. Returns Neural Filter descriptors recorded since
+    start_neural_filter_capture was called. The spl::filterStack array inside
+    a captured descriptor's NF_UI_DATA can be replayed exactly via
+    apply_neural_filter(raw_filter_stack=...).
+    """
+
+    command = createCommand("getCapturedNeuralFilters", {})
+
+    return sendCommand(command)
+
+
 # Batch processing (Phase 2)
 #
 # Maps batch operation names to the UXP action they dispatch and the option
@@ -1937,7 +2072,8 @@ def batch_process_layers(operation: str, layer_ids: list, settings: dict = {}):
             the layer id, which is injected per layer). Examples:
             gaussian_blur -> {"radius": 4.0}
             motion_blur -> {"angle": 45, "distance": 30}
-            set_layer_properties -> {"blendMode": "MULTIPLY", "opacity": 80}
+            set_layer_properties -> {"blendMode": "MULTIPLY", "layerOpacity": 80,
+                "fillOpacity": 100, "isClippingMask": false}
             brightness_contrast -> {"brightness": 20, "contrast": 10}
     """
 

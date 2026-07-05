@@ -65,17 +65,34 @@ emit inside the `connect` handler → transient reconnects replayed commands
 (observed: duplicate Levels layer). Fixed with `reconnection=False` + a
 `command_sent` guard. Fix benefits ps/pr/ai servers (shared module).
 
-## Phase 2 — NEXT (see Technical_Roadmap.md; adapt roadmap code samples,
+## Phase 2 — DONE (2026-07-04, 83 tools registered; batch tools live-tested)
+
+Batch processing (server-side Python only, no UXP changes): batch_process_layers,
+create/play/list/delete_action_sequence. Operations dispatch existing UXP
+actions per layer via the BATCH_OPERATIONS registry in ps-mcp.py; settings use
+the same camelCase keys as the single-layer tool's command options. Sequences
+persist to mcp/action_sequences.json (gitignored). Per-layer/per-step errors
+are collected and processing continues; a lost connection aborts and marks the
+rest SKIPPED. Live-verified: batch set_layer_visibility (incl. bad-ID error
+path) and a two-step sequence replay.
+
+Neural filters (EXPERIMENTAL, `commands/neural_filters.js` + 4 Python tools):
+apply_neural_filter (generic envelope verified against Adobe's official
+neural-filter-sample repo), neural_style_transfer (params verbatim from that
+sample), start_neural_filter_capture / get_captured_neural_filters (records
+`neuralGalleryFilters` notification events for exact replay via
+raw_filter_stack). NOT yet live-tested: requires plugin reload in UXP Dev
+Tools, the filter must be downloaded in Filter > Neural Filters first, and
+per-filter spl:: value keys are version-sensitive — capture-then-replay is
+the reliable path. "Super Zoom" outputs to a new document and is known
+unreliable programmatically; no dedicated wrapper was built for it.
+
+## Phase 3 — NEXT (see Technical_Roadmap.md; adapt roadmap code samples,
 they use invalid ExtendScript APIs)
 
-Priority order:
-1. **Batch processing** (mostly server-side Python: batch_process_layers,
-   create_action_sequence). High value, low risk.
-2. **Neural filter wrappers** (style transfer, super resolution) — UXP
-   neural filter batchPlay support is limited/version-sensitive; research
-   with Alchemist plugin before implementing.
-3. Roadmap notes some items already exist upstream — always check existing
-   tools in ps-mcp.py before adding (74 tools currently registered).
+Priority order: vector/path tools, advanced layer styles (bevel/emboss,
+glow, satin), animation timeline (low priority per roadmap matrix). Always
+check existing tools in ps-mcp.py before adding.
 
 ## Testing
 
