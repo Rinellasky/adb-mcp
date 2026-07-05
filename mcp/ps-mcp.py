@@ -2110,6 +2110,104 @@ def create_path_from_points(path_name: str, points: list, closed: bool = False):
     return sendCommand(command)
 
 
+# Animation timeline (Phase 3)
+
+@mcp.tool()
+def create_frame_animation():
+    """
+    Creates a new frame animation timeline in the current document (the
+    equivalent of clicking "Create Frame Animation" in the Timeline panel).
+    Fails if a timeline already exists.
+    """
+
+    command = createCommand("createFrameAnimation", {})
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_animation_frame(duration: float = 0.1):
+    """
+    Adds a new frame to the frame animation timeline (duplicating the current
+    frame's state) and makes it the current frame. Layer changes made after
+    adding a frame (visibility, position, opacity) are recorded into that
+    frame.
+
+    Args:
+        duration (float): Frame delay in seconds (e.g. 0.1).
+    """
+
+    command = createCommand("addAnimationFrame", {
+        "duration": duration
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def select_animation_frame(frame_index: int):
+    """
+    Selects the frame with the given index in the frame animation timeline,
+    making it current. The document canvas updates to show that frame's state.
+
+    Args:
+        frame_index (int): 1-based index of the frame to select.
+    """
+
+    command = createCommand("selectAnimationFrame", {
+        "frameIndex": frame_index
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_animation_frame_delay(delay: float, frame_index: int = 0):
+    """
+    Sets the delay (duration) of an animation frame.
+
+    Args:
+        delay (float): Frame delay in seconds (e.g. 0.5).
+        frame_index (int): 1-based index of the frame to modify. 0 (default)
+            modifies the currently selected frame.
+    """
+
+    options = {"delay": delay}
+
+    if frame_index:
+        options["frameIndex"] = frame_index
+
+    command = createCommand("setAnimationFrameDelay", options)
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def create_animation_frames_from_layers():
+    """
+    Converts each top-level layer of the document into one animation frame
+    ("Make Frames From Layers"). A frame animation timeline must already
+    exist (create_frame_animation). Useful for turning a stack of generated
+    or imported images into an animation in one call.
+    """
+
+    command = createCommand("createAnimationFramesFromLayers", {})
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_animation_info():
+    """
+    Returns information about the document's frame animation: frame count,
+    current frame index and loop count.
+    """
+
+    command = createCommand("getAnimationInfo", {})
+
+    return sendCommand(command)
+
+
 # Neural filters (Phase 2, EXPERIMENTAL)
 #
 # Descriptor envelope verified against Adobe's official neural-filter-sample.

@@ -33,6 +33,7 @@ const layers = require("./layers")
 const painting = require("./painting")
 const neuralFilters = require("./neural_filters")
 const shapes = require("./shapes")
+const animation = require("./animation")
 
 const parseAndRouteCommands = async (commands) => {
     if (!commands.length) {
@@ -82,7 +83,8 @@ const commandHandlers = {
     ...layers.commandHandlers,
     ...painting.commandHandlers,
     ...neuralFilters.commandHandlers,
-    ...shapes.commandHandlers
+    ...shapes.commandHandlers,
+    ...animation.commandHandlers
 };
 
 module.exports = {
