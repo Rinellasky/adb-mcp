@@ -1,5 +1,6 @@
-# User-saved action sequences (local data, not source)
+# User-saved action sequences and neural filter presets (local data, not source)
 action_sequences.json
+neural_filter_presets.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

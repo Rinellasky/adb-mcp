@@ -1854,9 +1854,26 @@ def smudge_stroke(
 # Per-filter parameter keys are version-sensitive; the capture tools below
 # record real descriptors from a manual filter run for exact replay.
 
+NEURAL_PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "neural_filter_presets.json")
+
+
+def _load_neural_presets() -> dict:
+    try:
+        with open(NEURAL_PRESETS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_neural_presets(presets: dict):
+    with open(NEURAL_PRESETS_FILE, "w", encoding="utf-8") as f:
+        json.dump(presets, f, indent=2)
+
+
 @mcp.tool()
 def apply_neural_filter(
     layer_id: int,
+    raw_descriptor: dict = {},
     filter_id: str = "",
     values: dict = {},
     output_type: int = 2,
@@ -1864,47 +1881,183 @@ def apply_neural_filter(
     raw_filter_stack: list = []):
     """
     EXPERIMENTAL. Applies a Photoshop Neural Filter to the specified layer via
-    batchPlay. The filter MUST already be downloaded and enabled in Photoshop
-    (Filter > Neural Filters gallery) or the command will fail.
+    batchPlay. The filter MUST already be downloaded in Photoshop
+    (Filter > Neural Filters gallery).
 
-    Known filter ids include "internal.StyleTransfer" and "internal.Hazy"
-    (depth blur / haze). "Super Zoom" (super resolution) outputs to a new
-    document and is known to be unreliable when invoked programmatically.
+    IMPORTANT (verified live on Photoshop 2026): only raw_descriptor replay
+    actually executes. Descriptors built from filter_id/values are accepted
+    but silently do nothing, because modern Photoshop requires the compiled
+    NF_SPL_GRAPH that only a captured descriptor contains. The working flow:
+    start_neural_filter_capture -> apply the filter manually once ->
+    save_captured_neural_filter -> apply_neural_filter_preset (or pass the
+    captured descriptor here as raw_descriptor).
 
-    If a filter run fails or applies with wrong parameters, use
-    start_neural_filter_capture + get_captured_neural_filters to record the
-    exact descriptor from a manual run, then replay it with raw_filter_stack.
+    The filter_id/values/raw_filter_stack forms are kept for older Photoshop
+    builds (pre-2024) where the NF_UI_DATA envelope alone still executes.
 
     Args:
         layer_id (int): ID of the layer to apply the filter to.
-        filter_id (str): Neural filter identifier (e.g. "internal.StyleTransfer").
-            Ignored if raw_filter_stack is provided.
-        values (dict): Filter-specific parameter keys (e.g. "spl::style",
-            "spl::preserveColor" for style transfer). Omit to run the filter
-            with its default parameters.
-        output_type (int): NF_OUTPUT_TYPE value; 2 is the value used by
-            Adobe's official sample.
-        filter_version (str): Filter stack entry version (default "1.0").
-        raw_filter_stack (list): A complete spl::filterStack array (e.g.
-            captured with the capture tools) to replay exactly as recorded.
-            Takes precedence over filter_id/values.
+        raw_descriptor (dict): A complete captured neuralGalleryFilters
+            descriptor (from get_captured_neural_filters). Replayed exactly
+            as recorded. Takes precedence over all other arguments.
+        filter_id (str): LEGACY. Neural filter identifier (e.g.
+            "internal.StyleTransfer").
+        values (dict): LEGACY. Filter-specific spl:: parameter keys.
+        output_type (int): LEGACY. NF_OUTPUT_TYPE for the built envelope.
+        filter_version (str): LEGACY. Filter stack entry version.
+        raw_filter_stack (list): LEGACY. A spl::filterStack array to wrap in
+            a built envelope (which modern Photoshop ignores).
     """
 
     options = {
-        "layerId": layer_id,
-        "outputType": output_type
+        "layerId": layer_id
     }
 
-    if raw_filter_stack:
+    if raw_descriptor:
+        options["rawDescriptor"] = raw_descriptor
+    elif raw_filter_stack:
         options["rawFilterStack"] = raw_filter_stack
+        options["outputType"] = output_type
     else:
         options["filterId"] = filter_id
         options["values"] = values
         options["filterVersion"] = filter_version
+        options["outputType"] = output_type
 
     command = createCommand("applyNeuralFilter", options)
 
     return sendCommand(command)
+
+
+@mcp.tool()
+def save_captured_neural_filter(preset_name: str, event_index: int = -1, description: str = ""):
+    """
+    Saves a Neural Filter descriptor captured with start_neural_filter_capture
+    as a named preset that persists across restarts and can be replayed with
+    apply_neural_filter_preset. Overwrites an existing preset with the same
+    name.
+
+    Workflow: start_neural_filter_capture -> user applies the filter manually
+    once in Photoshop -> save_captured_neural_filter("my_preset").
+
+    Args:
+        preset_name (str): Name for the preset (e.g. "style_transfer_dixon").
+        event_index (int): Which captured event to save (default -1, the most
+            recent).
+        description (str): Optional description of what the preset does.
+    """
+
+    command = createCommand("getCapturedNeuralFilters", {})
+    r = sendCommand(command)
+
+    events = r.get("response", {}).get("events", [])
+
+    if not events:
+        raise ValueError(
+            "No captured neural filter events. Call start_neural_filter_capture, "
+            "apply a filter manually in Photoshop, then retry."
+        )
+
+    try:
+        descriptor = events[event_index]["descriptor"]
+    except IndexError:
+        raise ValueError(f"event_index {event_index} out of range; {len(events)} event(s) captured")
+
+    presets = _load_neural_presets()
+    presets[preset_name] = {
+        "description": description,
+        "descriptor": descriptor
+    }
+    _save_neural_presets(presets)
+
+    filter_ids = [
+        f.get("spl::id", "?")
+        for f in descriptor.get("NF_UI_DATA", {}).get("spl::filterStack", [])
+    ]
+
+    return {
+        "status": "SUCCESS",
+        "preset_name": preset_name,
+        "filters": filter_ids,
+        "saved_to": NEURAL_PRESETS_FILE
+    }
+
+
+@mcp.tool()
+def apply_neural_filter_preset(preset_name: str, layer_id: int):
+    """
+    Applies a saved Neural Filter preset (created with
+    save_captured_neural_filter) to the specified layer by replaying the
+    captured descriptor exactly. This is the reliable way to run neural
+    filters programmatically on modern Photoshop. The preset's filter must
+    still be downloaded in the Neural Filters gallery.
+
+    Args:
+        preset_name (str): Name of a saved preset (see list_neural_filter_presets).
+        layer_id (int): ID of the layer to apply the preset to.
+    """
+
+    presets = _load_neural_presets()
+
+    if preset_name not in presets:
+        raise ValueError(
+            f"Unknown preset '{preset_name}'. "
+            f"Available: {', '.join(sorted(presets)) or '(none)'}"
+        )
+
+    command = createCommand("applyNeuralFilter", {
+        "layerId": layer_id,
+        "rawDescriptor": presets[preset_name]["descriptor"]
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def list_neural_filter_presets():
+    """
+    Lists saved Neural Filter presets with their descriptions and the filter
+    ids they contain.
+    """
+
+    presets = _load_neural_presets()
+
+    return {
+        "presets": [
+            {
+                "name": name,
+                "description": data.get("description", ""),
+                "filters": [
+                    f.get("spl::id", "?")
+                    for f in data.get("descriptor", {}).get("NF_UI_DATA", {}).get("spl::filterStack", [])
+                ]
+            }
+            for name, data in sorted(presets.items())
+        ]
+    }
+
+
+@mcp.tool()
+def delete_neural_filter_preset(preset_name: str):
+    """
+    Deletes a saved Neural Filter preset.
+
+    Args:
+        preset_name (str): Name of the preset to delete.
+    """
+
+    presets = _load_neural_presets()
+
+    if preset_name not in presets:
+        raise ValueError(
+            f"Unknown preset '{preset_name}'. "
+            f"Available: {', '.join(sorted(presets)) or '(none)'}"
+        )
+
+    del presets[preset_name]
+    _save_neural_presets(presets)
+
+    return {"status": "SUCCESS", "deleted": preset_name}
 
 
 @mcp.tool()
@@ -1916,15 +2069,18 @@ def neural_style_transfer(
     brush_size: int = 100,
     blur: int = 0):
     """
-    EXPERIMENTAL. Applies the Style Transfer neural filter to the specified
-    layer. The Style Transfer filter MUST already be downloaded in Photoshop
-    (Filter > Neural Filters gallery) or the command will fail. The result is
-    output to a new layer.
+    LEGACY / pre-2024 Photoshop only. Applies the Style Transfer neural filter
+    by building an NF_UI_DATA envelope. Verified live on Photoshop 2026: this
+    form is accepted but SILENTLY DOES NOTHING (modern builds require the
+    compiled graph only a captured descriptor contains). On modern Photoshop
+    use the preset workflow instead: start_neural_filter_capture -> apply the
+    filter manually once -> save_captured_neural_filter ->
+    apply_neural_filter_preset.
 
     Args:
         layer_id (int): ID of the layer to apply style transfer to.
-        style (str): Built-in style preset name. Presets follow the pattern
-            "style<N>_crop" (e.g. "style28_crop").
+        style (str): Style preset name. Older builds use "style<N>_crop"
+            names; modern builds use names like "ast-dixon".
         preserve_color (bool): Keep the original image colors.
         strength (int): Style strength / preserve weight (0 to 100).
         brush_size (int): Stroke size of the transferred style (0 to 100).

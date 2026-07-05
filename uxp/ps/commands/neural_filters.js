@@ -114,32 +114,37 @@ const applyNeuralFilter = async (command) => {
         );
     }
 
-    let filterStack = buildFilterStack(options);
+    // A full raw descriptor (a complete neuralGalleryFilters event captured
+    // via startNeuralFilterCapture) replays exactly as recorded. On modern
+    // Photoshop (2024+) this is the ONLY form that executes: the compiled
+    // NF_SPL_GRAPH it contains is required, and envelope-only descriptors
+    // built from NF_UI_DATA are accepted but silently do nothing.
+    let descriptor;
 
-    let outputType = options.outputType !== undefined ? options.outputType : 2;
+    if (options.rawDescriptor) {
+        descriptor = options.rawDescriptor;
+    } else {
+        descriptor = {
+            _obj: "neuralGalleryFilters",
+            NF_OUTPUT_TYPE:
+                options.outputType !== undefined ? options.outputType : 2,
+            _isCommand: true,
+            NF_UI_DATA: {
+                _obj: "NF_UI_DATA",
+                "spl::version": "1.0.6",
+                "spl::filterStack": buildFilterStack(options),
+            },
+        };
+    }
 
     let result;
     await execute(async () => {
         selectLayer(layer, true);
 
-        result = await action.batchPlay(
-            [
-                {
-                    _obj: "neuralGalleryFilters",
-                    NF_OUTPUT_TYPE: outputType,
-                    _isCommand: true,
-                    NF_UI_DATA: {
-                        _obj: "NF_UI_DATA",
-                        "spl::version": "1.0.6",
-                        "spl::filterStack": filterStack,
-                    },
-                },
-            ],
-            {}
-        );
+        result = await action.batchPlay([descriptor], {});
     }, "Applying neural filter...");
 
-    return { filterStack: filterStack, batchPlayResult: result };
+    return { batchPlayResult: result };
 };
 
 const commandHandlers = {
