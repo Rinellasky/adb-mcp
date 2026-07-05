@@ -164,25 +164,32 @@ const createShapeLayer = async (command) => {
         using.strokeStyle = buildStrokeStyle(options.stroke);
     }
 
+    let makeDescriptor = {
+        _obj: "make",
+        _target: [
+            {
+                _ref: "contentLayer",
+            },
+        ],
+        using: using,
+        // "silent" suppresses Photoshop's scripting error dialog,
+        // which otherwise blocks batchPlay until dismissed
+        _options: {
+            dialogOptions: "silent",
+        },
+    };
+
     let layerId;
     await execute(async () => {
-        await action.batchPlay(
-            [
-                {
-                    _obj: "make",
-                    _target: [
-                        {
-                            _ref: "contentLayer",
-                        },
-                    ],
-                    using: using,
-                    _options: {
-                        dialogOptions: "dontDisplay",
-                    },
-                },
-            ],
-            {}
-        );
+        // "make" transiently reports "not currently available" when the host
+        // is busy (observed right after createDocument under memory
+        // pressure); one delayed retry rides out that state
+        try {
+            await action.batchPlay([makeDescriptor], {});
+        } catch (e) {
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            await action.batchPlay([makeDescriptor], {});
+        }
 
         let layer = app.activeDocument.activeLayers[0];
 

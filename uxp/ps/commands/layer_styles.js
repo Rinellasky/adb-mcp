@@ -351,10 +351,11 @@ const setLayerEffect = async (command, handlerName, effectKey, effectObject) => 
                     },
                 ],
                 to: to,
-                // Fail fast on descriptor problems instead of opening a
-                // dialog, which would deadlock inside executeAsModal
+                // "silent" suppresses Photoshop's scripting error dialog,
+                // which otherwise blocks batchPlay (and the socket response)
+                // until manually dismissed
                 _options: {
-                    dialogOptions: "dontDisplay",
+                    dialogOptions: "silent",
                 },
             },
         ];
