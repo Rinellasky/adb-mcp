@@ -127,23 +127,39 @@ const buildShape = (options) => {
     }
 
     if (shapeType === "LINE") {
+        // Since Photoshop v22 the line tool creates thin rectangles; a
+        // 'line' shape class is rejected with -25920. Build an axis-aligned
+        // thin rectangle along the line's length, centered on the midpoint;
+        // the caller rotates it into place afterwards.
+        let dx = bounds.right - bounds.left;
+        let dy = bounds.bottom - bounds.top;
+        let length = Math.sqrt(dx * dx + dy * dy);
+        let width = options.lineWidth || 1;
+        let midX = (bounds.left + bounds.right) / 2;
+        let midY = (bounds.top + bounds.bottom) / 2;
+
         return {
-            _obj: "line",
-            start: {
-                _obj: "paint",
-                horizontal: pixels(bounds.left),
-                vertical: pixels(bounds.top),
-            },
-            end: {
-                _obj: "paint",
-                horizontal: pixels(bounds.right),
-                vertical: pixels(bounds.bottom),
-            },
-            width: pixels(options.lineWidth || 1),
+            _obj: "rectangle",
+            top: pixels(midY - width / 2),
+            left: pixels(midX - length / 2),
+            bottom: pixels(midY + width / 2),
+            right: pixels(midX + length / 2),
         };
     }
 
     throw new Error(`createShapeLayer : Unknown shapeType : ${shapeType}`);
+};
+
+// With dialogOptions "silent", failed batchPlay commands come back as
+// {_obj: "error"} result descriptors instead of throwing
+const throwOnBatchPlayError = (results, context) => {
+    for (const r of results || []) {
+        if (r && r._obj === "error") {
+            throw new Error(
+                `${context} : batchPlay error ${r.result} : ${r.message}`
+            );
+        }
+    }
 };
 
 const createShapeLayer = async (command) => {
@@ -181,23 +197,72 @@ const createShapeLayer = async (command) => {
 
     let layerId;
     await execute(async () => {
+        let layerIdsBefore = new Set(
+            app.activeDocument.layers.map((l) => l.id)
+        );
+
         // "make" transiently reports "not currently available" when the host
-        // is busy (observed right after createDocument under memory
-        // pressure); one delayed retry rides out that state
+        // is busy; one delayed retry rides out that state
+        let results = await action.batchPlay([makeDescriptor], {});
         try {
-            await action.batchPlay([makeDescriptor], {});
+            throwOnBatchPlayError(results, "createShapeLayer");
         } catch (e) {
             await new Promise((resolve) => setTimeout(resolve, 500));
-            await action.batchPlay([makeDescriptor], {});
+            results = await action.batchPlay([makeDescriptor], {});
+            throwOnBatchPlayError(results, "createShapeLayer");
         }
 
         let layer = app.activeDocument.activeLayers[0];
 
-        if (layer && options.layerName) {
+        if (!layer || layerIdsBefore.has(layer.id)) {
+            throw new Error(
+                `createShapeLayer : make succeeded but no new layer was created`
+            );
+        }
+
+        // LINE is built as an axis-aligned thin rectangle; rotate it to the
+        // requested angle around its center
+        if (options.shapeType === "LINE") {
+            let dx = options.bounds.right - options.bounds.left;
+            let dy = options.bounds.bottom - options.bounds.top;
+            let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+
+            if (Math.abs(angle) > 0.01) {
+                let rotateResults = await action.batchPlay(
+                    [
+                        {
+                            _obj: "transform",
+                            _target: [
+                                {
+                                    _enum: "ordinal",
+                                    _ref: "layer",
+                                    _value: "targetEnum",
+                                },
+                            ],
+                            freeTransformCenterState: {
+                                _enum: "quadCenterState",
+                                _value: "QCSAverage",
+                            },
+                            angle: {
+                                _unit: "angleUnit",
+                                _value: angle,
+                            },
+                            _options: {
+                                dialogOptions: "silent",
+                            },
+                        },
+                    ],
+                    {}
+                );
+                throwOnBatchPlayError(rotateResults, "createShapeLayer:rotate");
+            }
+        }
+
+        if (options.layerName) {
             layer.name = options.layerName;
         }
 
-        layerId = layer ? layer.id : null;
+        layerId = layer.id;
     });
 
     return { layerId: layerId };

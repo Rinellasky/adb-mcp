@@ -360,7 +360,17 @@ const setLayerEffect = async (command, handlerName, effectKey, effectObject) => 
             },
         ];
 
-        await action.batchPlay(commands, {});
+        let results = await action.batchPlay(commands, {});
+
+        // With "silent", failures come back as {_obj: "error"} result
+        // descriptors instead of throwing
+        for (const r of results || []) {
+            if (r && r._obj === "error") {
+                throw new Error(
+                    `${handlerName} : batchPlay error ${r.result} : ${r.message}`
+                );
+            }
+        }
     });
 };
 
