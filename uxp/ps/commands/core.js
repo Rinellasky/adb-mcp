@@ -465,9 +465,8 @@ const setActiveDocument = async (command) => {
 
     let options = command.options;
     let documentId = options.documentId;
-    let docs = listOpenDocuments();
 
-    for (let doc of docs) {
+    for (let doc of app.documents) {
         if (doc.id === documentId) {
             await execute(async () => {
                 app.activeDocument = doc;
@@ -476,6 +475,10 @@ const setActiveDocument = async (command) => {
             return
         }
     }
+
+    throw new Error(
+        `setActiveDocument : Could not find documentId : ${documentId}`
+    );
 }
 
 const getDocuments = async (command) => {
