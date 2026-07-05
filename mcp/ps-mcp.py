@@ -28,6 +28,7 @@ import base64
 import socket_client
 import sys
 import os
+import json
 
 FONT_LIMIT = 1000 #max number of font names to return to AI
 
@@ -1845,6 +1846,273 @@ def smudge_stroke(
     })
 
     return sendCommand(command)
+
+
+# Batch processing (Phase 2)
+#
+# Maps batch operation names to the UXP action they dispatch and the option
+# key used to target a layer. Settings for each operation use the same
+# camelCase option keys as the corresponding single-layer tool's command.
+BATCH_OPERATIONS = {
+    "gaussian_blur": ("applyGaussianBlur", "layerId"),
+    "motion_blur": ("applyMotionBlur", "layerId"),
+    "scale_layer": ("scaleLayer", "layerId"),
+    "rotate_layer": ("rotateLayer", "layerId"),
+    "flip_layer": ("flipLayer", "layerId"),
+    "translate_layer": ("translateLayer", "layerId"),
+    "set_layer_visibility": ("setLayerVisibility", "layerId"),
+    "set_layer_properties": ("setLayerProperties", "layerId"),
+    "rasterize_layer": ("rasterizeLayer", "layerId"),
+    "delete_layer": ("deleteLayer", "layerId"),
+    "duplicate_layer": ("duplicateLayer", "sourceLayerId"),
+    "harmonize_layer": ("harmonizeLayer", "layerId"),
+    "drop_shadow": ("addDropShadowLayerStyle", "layerId"),
+    "stroke_style": ("addStrokeLayerStyle", "layerId"),
+    "gradient_style": ("createGradientLayerStyle", "layerId"),
+    "brightness_contrast": ("addBrightnessContrastAdjustmentLayer", "layerId"),
+    "vibrance": ("addAdjustmentLayerVibrance", "layerId"),
+    "black_and_white": ("addAdjustmentLayerBlackAndWhite", "layerId"),
+    "color_balance": ("addColorBalanceAdjustmentLayer", "layerId"),
+    "curves": ("addCurvesAdjustmentLayer", "layerId"),
+    "levels": ("addLevelsAdjustmentLayer", "layerId"),
+    "hue_saturation": ("addHueSaturationAdjustmentLayer", "layerId"),
+    "selective_color": ("addSelectiveColorAdjustmentLayer", "layerId"),
+    "paint_brush_stroke": ("paintBrushStroke", "layerId"),
+    "eraser_stroke": ("eraserStroke", "layerId"),
+    "smudge_stroke": ("smudgeStroke", "layerId"),
+}
+
+SEQUENCES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "action_sequences.json")
+
+
+def _load_sequences() -> dict:
+    try:
+        with open(SEQUENCES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_sequences(sequences: dict):
+    with open(SEQUENCES_FILE, "w", encoding="utf-8") as f:
+        json.dump(sequences, f, indent=2)
+
+
+def _run_operation(operation: str, layer_id: int, settings: dict):
+    action, layer_key = BATCH_OPERATIONS[operation]
+    options = dict(settings or {})
+    options[layer_key] = layer_id
+    return sendCommand(createCommand(action, options))
+
+
+def _validate_operations(operations: list):
+    for i, step in enumerate(operations):
+        if not isinstance(step, dict) or "operation" not in step:
+            raise ValueError(f"Step {i} must be a dict with an 'operation' key")
+        if step["operation"] not in BATCH_OPERATIONS:
+            raise ValueError(
+                f"Step {i}: unknown operation '{step['operation']}'. "
+                f"Valid operations: {', '.join(sorted(BATCH_OPERATIONS))}"
+            )
+
+
+@mcp.tool()
+def batch_process_layers(operation: str, layer_ids: list, settings: dict = {}):
+    """
+    Applies a single operation to multiple layers in one call, collecting
+    per-layer results. Layers that fail do not stop the batch; the error is
+    recorded and processing continues with the next layer.
+
+    Args:
+        operation (str): Operation to apply. One of: gaussian_blur, motion_blur,
+            scale_layer, rotate_layer, flip_layer, translate_layer,
+            set_layer_visibility, set_layer_properties, rasterize_layer,
+            delete_layer, duplicate_layer, harmonize_layer, drop_shadow,
+            stroke_style, gradient_style, brightness_contrast, vibrance,
+            black_and_white, color_balance, curves, levels, hue_saturation,
+            selective_color, paint_brush_stroke, eraser_stroke, smudge_stroke.
+        layer_ids (list): IDs of the layers to process, in order.
+        settings (dict): Options for the operation, using the same camelCase
+            keys as the corresponding single-layer tool's options (excluding
+            the layer id, which is injected per layer). Examples:
+            gaussian_blur -> {"radius": 4.0}
+            motion_blur -> {"angle": 45, "distance": 30}
+            set_layer_properties -> {"blendMode": "MULTIPLY", "opacity": 80}
+            brightness_contrast -> {"brightness": 20, "contrast": 10}
+    """
+
+    if operation not in BATCH_OPERATIONS:
+        raise ValueError(
+            f"Unknown operation '{operation}'. "
+            f"Valid operations: {', '.join(sorted(BATCH_OPERATIONS))}"
+        )
+
+    results = []
+    succeeded = 0
+    failed = 0
+
+    for layer_id in layer_ids:
+        try:
+            response = _run_operation(operation, layer_id, settings)
+            results.append({"layerId": layer_id, "status": "SUCCESS", "response": response})
+            succeeded += 1
+        except socket_client.AppError as e:
+            results.append({"layerId": layer_id, "status": "FAILURE", "error": str(e)})
+            failed += 1
+        except RuntimeError as e:
+            # Connection-level failure: remaining layers cannot succeed, abort
+            results.append({"layerId": layer_id, "status": "FAILURE", "error": str(e)})
+            failed += 1
+            for remaining in layer_ids[layer_ids.index(layer_id) + 1:]:
+                results.append({"layerId": remaining, "status": "SKIPPED",
+                                "error": "Skipped: connection to Photoshop lost"})
+            break
+
+    return {
+        "operation": operation,
+        "succeeded": succeeded,
+        "failed": failed,
+        "skipped": len(layer_ids) - succeeded - failed,
+        "results": results
+    }
+
+
+@mcp.tool()
+def create_action_sequence(sequence_name: str, operations: list, description: str = ""):
+    """
+    Saves a named, reusable sequence of operations that can later be replayed
+    against one or more layers with play_action_sequence. Sequences persist
+    across server restarts. If a sequence with the same name exists it is
+    overwritten.
+
+    Args:
+        sequence_name (str): Name for the sequence (e.g. "vintage_look").
+        operations (list): Ordered steps, each a dict with:
+            - operation (str): An operation name (see batch_process_layers for
+              the valid list).
+            - settings (dict): Options for the operation, same camelCase keys
+              as the corresponding single-layer tool (layer id excluded).
+            Example: [{"operation": "brightness_contrast",
+                       "settings": {"brightness": -10, "contrast": 15}},
+                      {"operation": "vibrance",
+                       "settings": {"vibrance": -30, "saturation": -20}}]
+        description (str): Optional human-readable description of what the
+            sequence does.
+    """
+
+    _validate_operations(operations)
+
+    sequences = _load_sequences()
+    sequences[sequence_name] = {
+        "description": description,
+        "operations": operations
+    }
+    _save_sequences(sequences)
+
+    return {
+        "status": "SUCCESS",
+        "sequence_name": sequence_name,
+        "steps": len(operations),
+        "saved_to": SEQUENCES_FILE
+    }
+
+
+@mcp.tool()
+def play_action_sequence(sequence_name: str, layer_ids: list):
+    """
+    Replays a saved action sequence against each of the specified layers, in
+    order. All steps are applied to a layer before moving to the next layer.
+    A failing step records an error and continues with the layer's next step;
+    a lost connection aborts the run.
+
+    Args:
+        sequence_name (str): Name of a sequence created with create_action_sequence.
+        layer_ids (list): IDs of the layers to run the sequence against.
+    """
+
+    sequences = _load_sequences()
+    if sequence_name not in sequences:
+        raise ValueError(
+            f"Unknown sequence '{sequence_name}'. "
+            f"Available: {', '.join(sorted(sequences)) or '(none)'}"
+        )
+
+    operations = sequences[sequence_name]["operations"]
+    _validate_operations(operations)
+
+    results = []
+    aborted = False
+
+    for layer_id in layer_ids:
+        if aborted:
+            results.append({"layerId": layer_id, "status": "SKIPPED",
+                            "error": "Skipped: connection to Photoshop lost"})
+            continue
+
+        step_results = []
+        for i, step in enumerate(operations):
+            try:
+                response = _run_operation(step["operation"], layer_id, step.get("settings", {}))
+                step_results.append({"step": i, "operation": step["operation"],
+                                     "status": "SUCCESS", "response": response})
+            except socket_client.AppError as e:
+                step_results.append({"step": i, "operation": step["operation"],
+                                     "status": "FAILURE", "error": str(e)})
+            except RuntimeError as e:
+                step_results.append({"step": i, "operation": step["operation"],
+                                     "status": "FAILURE", "error": str(e)})
+                aborted = True
+                break
+
+        failed = sum(1 for s in step_results if s["status"] == "FAILURE")
+        results.append({
+            "layerId": layer_id,
+            "status": "FAILURE" if failed else "SUCCESS",
+            "steps": step_results
+        })
+
+    return {"sequence_name": sequence_name, "results": results}
+
+
+@mcp.tool()
+def list_action_sequences():
+    """
+    Lists all saved action sequences with their descriptions and steps.
+    """
+
+    sequences = _load_sequences()
+    return {
+        "sequences": [
+            {
+                "name": name,
+                "description": data.get("description", ""),
+                "operations": data.get("operations", [])
+            }
+            for name, data in sorted(sequences.items())
+        ]
+    }
+
+
+@mcp.tool()
+def delete_action_sequence(sequence_name: str):
+    """
+    Deletes a saved action sequence.
+
+    Args:
+        sequence_name (str): Name of the sequence to delete.
+    """
+
+    sequences = _load_sequences()
+    if sequence_name not in sequences:
+        raise ValueError(
+            f"Unknown sequence '{sequence_name}'. "
+            f"Available: {', '.join(sorted(sequences)) or '(none)'}"
+        )
+
+    del sequences[sequence_name]
+    _save_sequences(sequences)
+
+    return {"status": "SUCCESS", "deleted": sequence_name}
 
 
 @mcp.resource("config://get_instructions")
