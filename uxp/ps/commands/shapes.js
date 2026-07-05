@@ -176,6 +176,9 @@ const createShapeLayer = async (command) => {
                         },
                     ],
                     using: using,
+                    _options: {
+                        dialogOptions: "dontDisplay",
+                    },
                 },
             ],
             {}

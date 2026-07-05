@@ -351,6 +351,11 @@ const setLayerEffect = async (command, handlerName, effectKey, effectObject) => 
                     },
                 ],
                 to: to,
+                // Fail fast on descriptor problems instead of opening a
+                // dialog, which would deadlock inside executeAsModal
+                _options: {
+                    dialogOptions: "dontDisplay",
+                },
             },
         ];
 
