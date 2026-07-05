@@ -1848,6 +1848,268 @@ def smudge_stroke(
     return sendCommand(command)
 
 
+# Advanced layer styles (Phase 3)
+
+@mcp.tool()
+def add_bevel_emboss_layer_style(
+    layer_id: int,
+    style: str = "INNER_BEVEL",
+    depth: int = 100,
+    size: int = 5,
+    soften: int = 0,
+    angle: int = 120,
+    altitude: int = 30,
+    direction: str = "UP",
+    highlight_color: dict = {"red": 255, "green": 255, "blue": 255},
+    highlight_opacity: int = 50,
+    shadow_color: dict = {"red": 0, "green": 0, "blue": 0},
+    shadow_opacity: int = 50):
+    """
+    Adds a bevel and emboss layer style to the layer with the specified ID.
+
+    Args:
+        layer_id (int): ID of the layer to apply the effect to.
+        style (str): INNER_BEVEL, OUTER_BEVEL, EMBOSS, PILLOW_EMBOSS or
+            STROKE_EMBOSS.
+        depth (int): Bevel depth (1 to 1000).
+        size (int): Bevel size in pixels.
+        soften (int): Softening in pixels (0 to 16).
+        angle (int): Light angle (-180 to 180).
+        altitude (int): Light altitude (0 to 90).
+        direction (str): UP or DOWN.
+        highlight_color (dict): Highlight color (red, green, blue 0-255).
+        highlight_opacity (int): Highlight opacity (0 to 100).
+        shadow_color (dict): Shadow color (red, green, blue 0-255).
+        shadow_opacity (int): Shadow opacity (0 to 100).
+    """
+
+    command = createCommand("addBevelEmbossLayerStyle", {
+        "layerId": layer_id,
+        "style": style,
+        "depth": depth,
+        "size": size,
+        "soften": soften,
+        "angle": angle,
+        "altitude": altitude,
+        "direction": direction,
+        "highlightColor": highlight_color,
+        "highlightOpacity": highlight_opacity,
+        "shadowColor": shadow_color,
+        "shadowOpacity": shadow_opacity
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_inner_glow_layer_style(
+    layer_id: int,
+    color: dict = {"red": 255, "green": 255, "blue": 190},
+    size: int = 5,
+    choke: int = 0,
+    opacity: int = 75,
+    blend_mode: str = "SCREEN",
+    source: str = "EDGE"):
+    """
+    Adds an inner glow layer style to the layer with the specified ID.
+
+    Args:
+        layer_id (int): ID of the layer to apply the effect to.
+        color (dict): Glow color (red, green, blue 0-255).
+        size (int): Glow size in pixels.
+        choke (int): Choke in pixels (0 to 100).
+        opacity (int): Glow opacity (0 to 100).
+        blend_mode (str): Blend mode for the glow (typically SCREEN).
+        source (str): EDGE (glow from edges inward) or CENTER.
+    """
+
+    command = createCommand("addInnerGlowLayerStyle", {
+        "layerId": layer_id,
+        "color": color,
+        "size": size,
+        "choke": choke,
+        "opacity": opacity,
+        "blendMode": blend_mode,
+        "source": source
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_outer_glow_layer_style(
+    layer_id: int,
+    color: dict = {"red": 255, "green": 255, "blue": 190},
+    size: int = 5,
+    spread: int = 0,
+    opacity: int = 75,
+    blend_mode: str = "SCREEN"):
+    """
+    Adds an outer glow layer style to the layer with the specified ID.
+
+    Args:
+        layer_id (int): ID of the layer to apply the effect to.
+        color (dict): Glow color (red, green, blue 0-255).
+        size (int): Glow size in pixels.
+        spread (int): Spread in pixels (0 to 100).
+        opacity (int): Glow opacity (0 to 100).
+        blend_mode (str): Blend mode for the glow (typically SCREEN).
+    """
+
+    command = createCommand("addOuterGlowLayerStyle", {
+        "layerId": layer_id,
+        "color": color,
+        "size": size,
+        "spread": spread,
+        "opacity": opacity,
+        "blendMode": blend_mode
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_satin_layer_style(
+    layer_id: int,
+    color: dict = {"red": 0, "green": 0, "blue": 0},
+    size: int = 14,
+    distance: int = 11,
+    angle: int = 19,
+    opacity: int = 50,
+    blend_mode: str = "MULTIPLY",
+    invert: bool = True):
+    """
+    Adds a satin layer style to the layer with the specified ID, giving the
+    layer contents a smooth, satin-like interior finish.
+
+    Args:
+        layer_id (int): ID of the layer to apply the effect to.
+        color (dict): Satin color (red, green, blue 0-255).
+        size (int): Effect size in pixels.
+        distance (int): Effect distance in pixels.
+        angle (int): Effect angle (-180 to 180).
+        opacity (int): Effect opacity (0 to 100).
+        blend_mode (str): Blend mode (typically MULTIPLY).
+        invert (bool): Invert the satin contour.
+    """
+
+    command = createCommand("addSatinLayerStyle", {
+        "layerId": layer_id,
+        "color": color,
+        "size": size,
+        "distance": distance,
+        "angle": angle,
+        "opacity": opacity,
+        "blendMode": blend_mode,
+        "invert": invert
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_color_overlay_layer_style(
+    layer_id: int,
+    color: dict,
+    opacity: int = 100,
+    blend_mode: str = "NORMAL"):
+    """
+    Adds a color overlay layer style to the layer with the specified ID.
+
+    Args:
+        layer_id (int): ID of the layer to apply the effect to.
+        color (dict): Overlay color (red, green, blue 0-255).
+        opacity (int): Overlay opacity (0 to 100).
+        blend_mode (str): Blend mode for the overlay.
+    """
+
+    command = createCommand("addColorOverlayLayerStyle", {
+        "layerId": layer_id,
+        "color": color,
+        "opacity": opacity,
+        "blendMode": blend_mode
+    })
+
+    return sendCommand(command)
+
+
+# Vector / shape tools (Phase 3)
+
+@mcp.tool()
+def create_shape_layer(
+    shape_type: str,
+    bounds: dict,
+    fill_color: dict,
+    layer_name: str = "",
+    corner_radius: int = 0,
+    line_width: int = 1,
+    stroke: dict = {}):
+    """
+    Creates a vector shape layer in the current Photoshop document. Returns
+    the new layer's ID.
+
+    Args:
+        shape_type (str): RECTANGLE, ELLIPSE or LINE.
+        bounds (dict): Dict with top, left, bottom and right pixel positions.
+            For RECTANGLE and ELLIPSE this is the bounding box. For LINE the
+            line runs from (left, top) to (right, bottom).
+        fill_color (dict): Fill color (red, green, blue 0-255).
+        layer_name (str): Optional name for the new shape layer.
+        corner_radius (int): Corner radius in pixels (RECTANGLE only; 0 for
+            square corners).
+        line_width (int): Line thickness in pixels (LINE only).
+        stroke (dict): Optional stroke: {"size": <pixels>, "color": {"red":...,
+            "green":..., "blue":...}}. Omit for no stroke.
+    """
+
+    shape_type = shape_type.upper()
+
+    if shape_type not in ("RECTANGLE", "ELLIPSE", "LINE"):
+        raise ValueError(f"Unknown shape_type '{shape_type}'. Valid: RECTANGLE, ELLIPSE, LINE")
+
+    options = {
+        "shapeType": shape_type,
+        "bounds": bounds,
+        "fillColor": fill_color,
+        "layerName": layer_name,
+        "cornerRadius": corner_radius,
+        "lineWidth": line_width
+    }
+
+    if stroke:
+        options["stroke"] = stroke
+
+    command = createCommand("createShapeLayer", options)
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def create_path_from_points(path_name: str, points: list, closed: bool = False):
+    """
+    Creates a named vector path in the current Photoshop document from a list
+    of anchor points. The path appears in the Paths panel and can be used for
+    selections, strokes or clipping.
+
+    Args:
+        path_name (str): Name for the path.
+        points (list): At least 2 anchor points, each a dict with "x" and "y"
+            pixel positions. For curved (bezier) segments a point may also
+            include "forward" and/or "backward" handle dicts ({"x":..., "y":...},
+            absolute pixel positions) and optional "smooth" (bool, default true
+            when handles are present).
+        closed (bool): Close the path back to the first point.
+    """
+
+    command = createCommand("createPathFromPoints", {
+        "pathName": path_name,
+        "points": points,
+        "closed": closed
+    })
+
+    return sendCommand(command)
+
+
 # Neural filters (Phase 2, EXPERIMENTAL)
 #
 # Descriptor envelope verified against Adobe's official neural-filter-sample.
@@ -2160,6 +2422,11 @@ BATCH_OPERATIONS = {
     "drop_shadow": ("addDropShadowLayerStyle", "layerId"),
     "stroke_style": ("addStrokeLayerStyle", "layerId"),
     "gradient_style": ("createGradientLayerStyle", "layerId"),
+    "bevel_emboss": ("addBevelEmbossLayerStyle", "layerId"),
+    "inner_glow": ("addInnerGlowLayerStyle", "layerId"),
+    "outer_glow": ("addOuterGlowLayerStyle", "layerId"),
+    "satin": ("addSatinLayerStyle", "layerId"),
+    "color_overlay": ("addColorOverlayLayerStyle", "layerId"),
     "brightness_contrast": ("addBrightnessContrastAdjustmentLayer", "layerId"),
     "vibrance": ("addAdjustmentLayerVibrance", "layerId"),
     "black_and_white": ("addAdjustmentLayerBlackAndWhite", "layerId"),
@@ -2219,7 +2486,8 @@ def batch_process_layers(operation: str, layer_ids: list, settings: dict = {}):
             scale_layer, rotate_layer, flip_layer, translate_layer,
             set_layer_visibility, set_layer_properties, rasterize_layer,
             delete_layer, duplicate_layer, harmonize_layer, drop_shadow,
-            stroke_style, gradient_style, brightness_contrast, vibrance,
+            stroke_style, gradient_style, bevel_emboss, inner_glow,
+            outer_glow, satin, color_overlay, brightness_contrast, vibrance,
             black_and_white, color_balance, curves, levels, hue_saturation,
             selective_color, paint_brush_stroke, eraser_stroke, smudge_stroke.
         layer_ids (list): IDs of the layers to process, in order.

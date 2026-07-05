@@ -32,6 +32,7 @@ const selection = require("./selection")
 const layers = require("./layers")
 const painting = require("./painting")
 const neuralFilters = require("./neural_filters")
+const shapes = require("./shapes")
 
 const parseAndRouteCommands = async (commands) => {
     if (!commands.length) {
@@ -80,7 +81,8 @@ const commandHandlers = {
     ...layerStyles.commandHandlers,
     ...layers.commandHandlers,
     ...painting.commandHandlers,
-    ...neuralFilters.commandHandlers
+    ...neuralFilters.commandHandlers,
+    ...shapes.commandHandlers
 };
 
 module.exports = {

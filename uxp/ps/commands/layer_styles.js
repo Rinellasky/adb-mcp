@@ -312,10 +312,299 @@ const createGradientLayerStyle = async (command) => {
 
 
 
+const setLayerEffect = async (command, handlerName, effectKey, effectObject) => {
+    let options = command.options;
+    let layerId = options.layerId;
+
+    let layer = findLayer(layerId);
+
+    if (!layer) {
+        throw new Error(
+            `${handlerName} : Could not find layerId : ${layerId}`
+        );
+    }
+
+    await execute(async () => {
+        selectLayer(layer, true);
+
+        let to = {
+            _obj: "layerEffects",
+            scale: {
+                _unit: "percentUnit",
+                _value: 100.0,
+            },
+        };
+        to[effectKey] = effectObject;
+
+        let commands = [
+            {
+                _obj: "set",
+                _target: [
+                    {
+                        _property: "layerEffects",
+                        _ref: "property",
+                    },
+                    {
+                        _enum: "ordinal",
+                        _ref: "layer",
+                        _value: "targetEnum",
+                    },
+                ],
+                to: to,
+            },
+        ];
+
+        await action.batchPlay(commands, {});
+    });
+};
+
+const rgbColor = (color) => {
+    return {
+        _obj: "RGBColor",
+        red: color.red,
+        grain: color.green,
+        blue: color.blue,
+    };
+};
+
+const BEVEL_STYLES = {
+    INNER_BEVEL: "innerBevel",
+    OUTER_BEVEL: "outerBevel",
+    EMBOSS: "emboss",
+    PILLOW_EMBOSS: "pillowEmboss",
+    STROKE_EMBOSS: "strokeEmboss",
+};
+
+const addBevelEmbossLayerStyle = async (command) => {
+    let options = command.options;
+
+    let bevelStyle = BEVEL_STYLES[options.style];
+
+    if (!bevelStyle) {
+        throw new Error(
+            `addBevelEmbossLayerStyle : Unknown style : ${options.style}`
+        );
+    }
+
+    await setLayerEffect(command, "addBevelEmbossLayerStyle", "bevelEmboss", {
+        _obj: "bevelEmboss",
+        antialiasGloss: false,
+        bevelDirection: {
+            _enum: "bevelEmbossStampStyle",
+            _value: options.direction === "DOWN" ? "out" : "in",
+        },
+        bevelStyle: {
+            _enum: "bevelEmbossStyle",
+            _value: bevelStyle,
+        },
+        bevelTechnique: {
+            _enum: "bevelTechnique",
+            _value: "softMatte",
+        },
+        blur: {
+            _unit: "pixelsUnit",
+            _value: options.size,
+        },
+        enabled: true,
+        present: true,
+        showInDialog: true,
+        highlightColor: rgbColor(options.highlightColor),
+        highlightMode: {
+            _enum: "blendMode",
+            _value: "screen",
+        },
+        highlightOpacity: {
+            _unit: "percentUnit",
+            _value: options.highlightOpacity,
+        },
+        localLightingAltitude: {
+            _unit: "angleUnit",
+            _value: options.altitude,
+        },
+        localLightingAngle: {
+            _unit: "angleUnit",
+            _value: options.angle,
+        },
+        shadowColor: rgbColor(options.shadowColor),
+        shadowMode: {
+            _enum: "blendMode",
+            _value: "multiply",
+        },
+        shadowOpacity: {
+            _unit: "percentUnit",
+            _value: options.shadowOpacity,
+        },
+        softness: {
+            _unit: "pixelsUnit",
+            _value: options.soften,
+        },
+        strengthRatio: {
+            _unit: "percentUnit",
+            _value: options.depth,
+        },
+        transferSpec: {
+            _obj: "shapeCurveType",
+            name: "Linear",
+        },
+        useGlobalAngle: true,
+        useShape: false,
+        useTexture: false,
+    });
+};
+
+const addInnerGlowLayerStyle = async (command) => {
+    let options = command.options;
+
+    await setLayerEffect(command, "addInnerGlowLayerStyle", "innerGlow", {
+        _obj: "innerGlow",
+        antiAlias: false,
+        blur: {
+            _unit: "pixelsUnit",
+            _value: options.size,
+        },
+        chokeMatte: {
+            _unit: "pixelsUnit",
+            _value: options.choke,
+        },
+        color: rgbColor(options.color),
+        enabled: true,
+        present: true,
+        showInDialog: true,
+        glowTechnique: {
+            _enum: "matteTechnique",
+            _value: "softMatte",
+        },
+        innerGlowSource: {
+            _enum: "innerGlowSourceType",
+            _value: options.source === "CENTER" ? "centerGlow" : "edgeGlow",
+        },
+        mode: {
+            _enum: "blendMode",
+            _value: options.blendMode.toLowerCase(),
+        },
+        noise: {
+            _unit: "percentUnit",
+            _value: 0.0,
+        },
+        opacity: {
+            _unit: "percentUnit",
+            _value: options.opacity,
+        },
+        transferSpec: {
+            _obj: "shapeCurveType",
+            name: "Linear",
+        },
+    });
+};
+
+const addOuterGlowLayerStyle = async (command) => {
+    let options = command.options;
+
+    await setLayerEffect(command, "addOuterGlowLayerStyle", "outerGlow", {
+        _obj: "outerGlow",
+        antiAlias: false,
+        blur: {
+            _unit: "pixelsUnit",
+            _value: options.size,
+        },
+        chokeMatte: {
+            _unit: "pixelsUnit",
+            _value: options.spread,
+        },
+        color: rgbColor(options.color),
+        enabled: true,
+        present: true,
+        showInDialog: true,
+        glowTechnique: {
+            _enum: "matteTechnique",
+            _value: "softMatte",
+        },
+        mode: {
+            _enum: "blendMode",
+            _value: options.blendMode.toLowerCase(),
+        },
+        noise: {
+            _unit: "percentUnit",
+            _value: 0.0,
+        },
+        opacity: {
+            _unit: "percentUnit",
+            _value: options.opacity,
+        },
+        transferSpec: {
+            _obj: "shapeCurveType",
+            name: "Linear",
+        },
+    });
+};
+
+const addSatinLayerStyle = async (command) => {
+    let options = command.options;
+
+    await setLayerEffect(command, "addSatinLayerStyle", "chromeFX", {
+        _obj: "chromeFX",
+        antiAlias: true,
+        blur: {
+            _unit: "pixelsUnit",
+            _value: options.size,
+        },
+        color: rgbColor(options.color),
+        distance: {
+            _unit: "pixelsUnit",
+            _value: options.distance,
+        },
+        enabled: true,
+        present: true,
+        showInDialog: true,
+        invert: options.invert,
+        localLightingAngle: {
+            _unit: "angleUnit",
+            _value: options.angle,
+        },
+        mappingShape: {
+            _obj: "shapeCurveType",
+            name: "Gaussian",
+        },
+        mode: {
+            _enum: "blendMode",
+            _value: options.blendMode.toLowerCase(),
+        },
+        opacity: {
+            _unit: "percentUnit",
+            _value: options.opacity,
+        },
+    });
+};
+
+const addColorOverlayLayerStyle = async (command) => {
+    let options = command.options;
+
+    await setLayerEffect(command, "addColorOverlayLayerStyle", "solidFill", {
+        _obj: "solidFill",
+        color: rgbColor(options.color),
+        enabled: true,
+        present: true,
+        showInDialog: true,
+        mode: {
+            _enum: "blendMode",
+            _value: options.blendMode.toLowerCase(),
+        },
+        opacity: {
+            _unit: "percentUnit",
+            _value: options.opacity,
+        },
+    });
+};
+
 const commandHandlers = {
     createGradientLayerStyle,
     addStrokeLayerStyle,
-    addDropShadowLayerStyle
+    addDropShadowLayerStyle,
+    addBevelEmbossLayerStyle,
+    addInnerGlowLayerStyle,
+    addOuterGlowLayerStyle,
+    addSatinLayerStyle,
+    addColorOverlayLayerStyle
 };
 
 module.exports = {
