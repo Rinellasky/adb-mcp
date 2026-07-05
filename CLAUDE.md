@@ -110,6 +110,18 @@ create_path_from_points (named paths, bezier forward/backward handles,
 open/closed). LINE is a thin rectangle rotated into place — PS v22+
 rejects the 'line' contentLayer shape class with error -25920.
 
+Animation (`commands/animation.js`, new; verified end-to-end with a 3-frame
+bouncing-ball test incl. pixel-diff between frames): create_frame_animation,
+add_animation_frame, select_animation_frame, set_animation_frame_delay,
+create_animation_frames_from_layers (requires timeline to exist first).
+Verified descriptors on PS 2026: timeline = `makeFrameAnimation` (NOT `make
+animationClass`), new frame = `duplicate animationFrameClass` (NOT `make`),
+delay/select as expected. NO working descriptor for reading animation state
+(get on animationClass / timeline / document frameCount all -25920) — there
+is deliberately no get_animation_info tool; callers must track frame count.
+
+ROADMAP COMPLETE. All three phases implemented; 99 tools registered.
+
 ## HARD-WON DEBUGGING LESSONS (cost a full day + several PS crashes)
 
 1. **Photoshop's scripting error dialog blocks batchPlay forever.** When a
