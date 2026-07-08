@@ -2,17 +2,16 @@
   "dxt_version": "0.1",
   "name": "adb-mcp-photoshop",
   "display_name": "Adobe Photoshop MCP",
-  "version": "0.85.3",
-  "description": "Proof of concept project to create AI Agent for Adobe Photshop by providing an interface to LLMs via the MCP protocol.",
-  "long_description": "Proof of concept project to create AI Agent for Adobe Photoshop by providing an interface to LLMs via the MCP protocol.",
+  "version": "1.0.0",
+  "description": "AI Agent for Adobe Photoshop: 99 tools (selection, adjustments, painting, layer styles, vector, animation, batch, neural filters) exposed to LLMs via the MCP protocol.",
+  "long_description": "Fork of Mike Chambers' adb-mcp, extended to 99 Photoshop tools across selection, color/adjustment layers, painting, layer styles, vector shapes/paths, frame animation, batch processing, and neural filters. Exposes Adobe Photoshop to any MCP-capable AI client (e.g. Claude Desktop).",
   "author": {
-    "name": "Mike Chambers",
-    "email": "mikechambers@gmail.com",
-    "url": "https://www.mikechambers.com"
+    "name": "Rinellasky",
+    "url": "https://github.com/Rinellasky"
   },
-  "homepage": "https://github.com/mikechambers/adb-mcp",
-  "documentation": "https://github.com/mikechambers/adb-mcp",
-  "support": "https://github.com/mikechambers/adb-mcp/issues",
+  "homepage": "https://github.com/Rinellasky/adb-mcp",
+  "documentation": "https://github.com/Rinellasky/adb-mcp",
+  "support": "https://github.com/Rinellasky/adb-mcp/issues",
   "server": {
     "type": "python",
     "entry_point": "main.py",
@@ -44,12 +43,14 @@
 
   "keywords": [
     "adobe",
-    "premierepro",
-    "video"
+    "photoshop",
+    "mcp",
+    "ai",
+    "image-editing"
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mikechambers/adb-mcp"
+    "url": "https://github.com/Rinellasky/adb-mcp"
   }
 }

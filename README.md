@@ -1,6 +1,12 @@
-# adb-mcp
+# adb-mcp (Photoshop fork)
 
-adb-mcp is a proof of concept project to enabled AI control of Adobe tools (Adobe Photoshop and Adobe Premiere) by providing an interface to LLMs via the MCP protocol.
+> **This is a Photoshop-focused fork of [mikechambers/adb-mcp](https://github.com/mikechambers/adb-mcp).**
+> It extends the original with **99 Photoshop tools** across selection, color/adjustment
+> layers, painting, layer styles, vector shapes/paths, frame animation, batch processing,
+> and neural filters — all live-verified against Photoshop 2026. Releases here package only
+> the Photoshop pieces. See the original repo for Premiere/InDesign/After Effects support.
+
+adb-mcp enables AI control of Adobe Photoshop by providing an interface to LLMs via the MCP protocol.
 
 The project is not endorsed by nor supported by Adobe.
 
@@ -52,10 +58,11 @@ Choose your installation method:
 Use this method if you want to try the system without modifying code.
 
 #### 1. Download Release Files
-Download the latest release from the [releases page](https://github.com/mikechambers/adb-mcp/releases), including:
-- Source code
-- Claude MCP installers (.dxt files)
-- Adobe plugins (.ccx files)
+Download the latest release from the [releases page](https://github.com/Rinellasky/adb-mcp/releases). Each release includes:
+- `photoshop-mcp.dxt` — Claude Desktop MCP installer (the MCP server)
+- `photoshop-mcp-plugin.ccx` — the Photoshop UXP plugin
+- `adb-proxy-socket-win-x64.exe` — prebuilt proxy server (Windows; macOS builds also attached)
+- Source code (auto-attached by GitHub)
 
 #### 2. Install Claude Desktop
 1. Download and install [Claude Desktop](https://claude.ai/download)
@@ -70,22 +77,18 @@ Download the latest release from the [releases page](https://github.com/mikecham
 
 #### Using Prebuilt Executables (Recommended)
 
-1. Download the appropriate executable for your platform from the latest release (files named like `adb-proxy-socket-macos-x64.zip` (Intel), `adb-proxy-socket-macos-arm64.zip` (Silicon), or `adb-proxy-socket-win-x64.exe.zip`).
-2. Unzip the executable.
-3. From the terminal or console run the executable:
+1. Download the executable for your platform from the latest release: `adb-proxy-socket-win-x64.exe` (Windows), `adb-proxy-socket-macos-x64` (Intel Mac), or `adb-proxy-socket-macos-arm64` (Apple Silicon).
+2. Run the executable:
 
-   - **macOS** (Intel or Apple Silicon):
-     ```bash
-     ./adb-proxy-socket-macos-x64
-     ```
-     or
-     ```bash
-     ./adb-proxy-socket-macos-arm64
-     ```
-   - **Windows**:  
-     Double-click `adb-proxy-socket-win.exe` or run in Command Prompt:
+   - **Windows**:
+     Double-click `adb-proxy-socket-win-x64.exe`, or run in Command Prompt:
      ```cmd
-     adb-proxy-socket-win.exe
+     adb-proxy-socket-win-x64.exe
+     ```
+   - **macOS** (Intel or Apple Silicon) — mark it executable first, then run:
+     ```bash
+     chmod +x ./adb-proxy-socket-macos-x64   # or -arm64
+     ./adb-proxy-socket-macos-x64
      ```
 
 4. You should see a message like:  
@@ -110,7 +113,13 @@ Download the latest release from the [releases page](https://github.com/mikecham
 Use this method if you want to modify the code or access the latest features.
 
 #### 1. Download Source Code
-Clone or download the source code from the [main project page](https://github.com/mikechambers/adb-mcp).
+Clone or download the source code from the [project page](https://github.com/Rinellasky/adb-mcp).
+
+> **Building release artifacts yourself:** run `python scripts/build_release.py` to
+> produce `dist/photoshop-mcp.dxt` and `dist/photoshop-mcp-plugin.ccx`. The proxy
+> executables are built with `cd adb-proxy-socket && npm ci && npx pkg . --out-path ../dist`.
+> Pushing a `v*` git tag runs `.github/workflows/release.yml`, which does all of this
+> and publishes a GitHub Release automatically.
 
 #### 2. Install Claude Desktop
 Same as Quick Start step 2.
@@ -291,7 +300,7 @@ Client Ud6L4CjMWGAeofYAAAAB registered for application: photoshop
 * The first thing to check if there is an issue is to make sure the plugin in Photoshop / Premiere is connected, and that the node proxy server is running.
 * If response times get really slow, check if the AI servers are under load, and that you do not have too much text in the current conversation (restarting a new chat can sometimes help speed up, but you will lose the context).
 
-If you continue to have issues post an [issue](https://github.com/mikechambers/adb-mcp/issuesrd.gg/fgxw9t37D7). Include as much information as you can (OS, App, App version, and debug info or errors).
+If you continue to have issues post an [issue](https://github.com/Rinellasky/adb-mcp/issues). Include as much information as you can (OS, App, App version, and debug info or errors).
 
 ## Development
 
