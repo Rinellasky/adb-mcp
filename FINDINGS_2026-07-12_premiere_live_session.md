@@ -45,3 +45,22 @@ create_sequence_from_media (single item), export_frame
 - Premiere Beta auto-recovered project as blue_base_showcase-2.prproj after restart;
   all imports and sequences survived. senderId churn is normal across reconnects.
 - ticksPerSecond confirmed 254016000000 in live sequence payloads.
+
+## UPDATE (same day, later): ROOT CAUSE CONFIRMED - Premiere Beta 26.5 breaking changes
+- Premiere Beta auto-updated to 26.5.0.59 (verified via exe VersionInfo). Plugin was verified Jul 4-9 on the prior build.
+- Adobe posted "Premiere 26.3 API Updates" on the CC Developer Forums on 2026-07-10 announcing BREAKING CHANGES:
+  1. Action creation must now happen inside project.lockedAccess() (enforcement tightened).
+  2. Sync/async signatures are churning per release (e.g. Sequence.setSelection is now synchronous).
+  https://forums.creativeclouddeveloper.com/t/premiere-26-3-api-updates/12009
+- Our failure mode: utils.js ticksFromSeconds() returns app.TickTime.createWithSeconds(seconds) UNAWAITED.
+  Handlers pass the resulting Promise into create*Action() natives (createOverwriteItemAction,
+  createSetInOutPointsAction), some even calling ticksFromSeconds INSIDE the executeTransaction callback
+  where await is impossible. On 26.5 this hangs the native bridge (no throw, no reply) and the wedged
+  transaction keeps holding the project lock, blocking ALL subsequent lockedAccess writes.
+- Same-family suspect: `const editor = app.SequenceEditor.getEditor(sequence)` unawaited (Adobe samples await it).
+- Fix pattern (per Adobe samples): hoist `await app.TickTime.createWithSeconds(...)` and `await getEditor(...)`
+  BEFORE the lockedAccess block; create only Action objects inside the lock.
+- Adopt @adobe/eslint-plugin-premierepro to catch these statically:
+  https://github.com/adobe/eslint-plugin-premierepro
+- Full audit of every execute()-using handler needed in Claude Code; this session live-patches only the
+  minimal handler set (overwriteClipAtTime, setSourceInOut, getEditor call sites) to finish the showcase edit.
