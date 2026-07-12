@@ -64,3 +64,18 @@ create_sequence_from_media (single item), export_frame
   https://github.com/adobe/eslint-plugin-premierepro
 - Full audit of every execute()-using handler needed in Claude Code; this session live-patches only the
   minimal handler set (overwriteClipAtTime, setSourceInOut, getEditor call sites) to finish the showcase edit.
+
+## FINAL (session close): patch attempt + fallback delivery
+- Live-patched sequence_editor.js / pipeline.js (awaited TickTime + getEditor, hoisted out of locks),
+  reloaded plugin via UDT on 26.5 -> setSourceInOut STILL hangs. The unawaited-Promise theory is
+  insufficient; 26.5 breakage is deeper (createSetInOutPointsAction / lock path itself). Needs UDT
+  console debugging in Claude Code. Patched files left in worktree UNCOMMITTED (originals preserved
+  as *.bak265) - review before keeping.
+- Showcase video delivered via detached-ffmpeg fallback implementing the exact planned edit
+  (7 segments, xfade fade/zoomin/fadeblack transitions, eq grade, -6/-12dB audio, acrossfades):
+  F:\premier\mcp_showcase\BLUE_BASE_60.mp4 (55.66s, 4K30, NVENC). Build script:
+  F:\premier\mcp_showcase\assets\build_video.ps1. Frame-verified.
+- Detached-execution + poll pattern (Start-Process hidden + marker file) worked flawlessly and is
+  the model for the async MCP architecture: NEVER let a tool call wait on long work.
+- Bridge cascade root observation refined: ANY local tool call exceeding the 4-min bridge timeout
+  (incl. a heavy Windows-MCP Snapshot) can kill the entire Claude Desktop local-tool runtime.
