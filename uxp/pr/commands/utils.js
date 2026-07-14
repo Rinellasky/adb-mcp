@@ -163,6 +163,169 @@ const findProjectItem = async (itemName, project) => {
 };
 
 
+const ticksFromSeconds = (seconds) => {
+    return app.TickTime.createWithSeconds(seconds);
+};
+
+//Serializes a keyframe / param value into something JSON-safe
+const sanitizeParamValue = (value) => {
+    if (value === null || value === undefined) {
+        return null;
+    }
+
+    //Keyframe values come back wrapped as {value: X} on 25.x - unwrap
+    if (
+        typeof value === "object" &&
+        value.value !== undefined &&
+        Object.keys(value).length === 1
+    ) {
+        value = value.value;
+    }
+
+    const t = typeof value;
+    if (t === "number" || t === "string" || t === "boolean") {
+        return value;
+    }
+
+    //PointF
+    if (typeof value.x === "number" && typeof value.y === "number") {
+        return { x: value.x, y: value.y };
+    }
+
+    //Color
+    if (typeof value.red === "number") {
+        return {
+            red: value.red,
+            green: value.green,
+            blue: value.blue,
+            alpha: value.alpha,
+        };
+    }
+
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch (e) {
+        return String(value);
+    }
+};
+
+const findComponentByMatchName = async (trackItem, matchName) => {
+    const chain = await trackItem.getComponentChain();
+
+    const count = chain.getComponentCount();
+    for (let i = 0; i < count; i++) {
+        const component = chain.getComponentAtIndex(i);
+        const m = await component.getMatchName();
+
+        if (m === matchName) {
+            return component;
+        }
+    }
+
+    return null;
+};
+
+const findParamOnComponent = (component, paramDisplayName) => {
+    const pCount = component.getParamCount();
+
+    for (let j = 0; j < pCount; j++) {
+        const param = component.getParam(j);
+        if (param.displayName === paramDisplayName) {
+            return param;
+        }
+    }
+
+    return null;
+};
+
+//Reads a trackItem's full component chain (effects + intrinsics) with
+//param names and current (start) values. The AI-facing read model for effects.
+const readComponentChain = async (trackItem) => {
+    const chain = await trackItem.getComponentChain();
+
+    const out = [];
+    const count = chain.getComponentCount();
+
+    for (let i = 0; i < count; i++) {
+        const component = chain.getComponentAtIndex(i);
+
+        const matchName = await component.getMatchName();
+
+        let displayName = null;
+        try {
+            displayName = await component.getDisplayName();
+        } catch (e) {
+            //not available on all versions
+        }
+
+        const params = [];
+        const pCount = component.getParamCount();
+
+        for (let j = 0; j < pCount; j++) {
+            const param = component.getParam(j);
+
+            let value = null;
+            let timeVarying = null;
+
+            try {
+                timeVarying = param.isTimeVarying();
+            } catch (e) {}
+
+            try {
+                const kf = await param.getStartValue();
+                value = sanitizeParamValue(kf.value);
+            } catch (e) {
+                //some params (e.g. non-keyframeable) may not support this
+            }
+
+            params.push({
+                index: j,
+                name: param.displayName,
+                value,
+                timeVarying,
+            });
+        }
+
+        out.push({ index: i, matchName, displayName, params });
+    }
+
+    return out;
+};
+
+//Reads basic clip info shared by several read tools
+const readTrackItem = async (trackItem, index) => {
+    const start = await trackItem.getStartTime();
+    const end = await trackItem.getEndTime();
+    const duration = await trackItem.getDuration();
+    const inPoint = await trackItem.getInPoint();
+    const outPoint = await trackItem.getOutPoint();
+    const name = await trackItem.getName();
+
+    let disabled = null;
+    try {
+        disabled = await trackItem.isDisabled();
+    } catch (e) {}
+
+    let selected = null;
+    try {
+        selected = await trackItem.getIsSelected();
+    } catch (e) {}
+
+    return {
+        index,
+        name,
+        startSeconds: start.seconds,
+        endSeconds: end.seconds,
+        startTicks: start.ticks,
+        endTicks: end.ticks,
+        durationSeconds: duration.seconds,
+        inPointSeconds: inPoint.seconds,
+        outPointSeconds: outPoint.seconds,
+        disabled,
+        selected,
+    };
+};
+
 const execute = (getActions, project) => {
     try {
         project.lockedAccess(() => {
@@ -405,4 +568,10 @@ module.exports = {
     getTracks,
     getSequences,
     getTrack,
+    ticksFromSeconds,
+    sanitizeParamValue,
+    findComponentByMatchName,
+    findParamOnComponent,
+    readComponentChain,
+    readTrackItem,
 };

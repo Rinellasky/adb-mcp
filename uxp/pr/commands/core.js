@@ -162,7 +162,7 @@ const appendVideoFilter = async (command) => {
         throw new Error(`appendVideoFilter : Requires an active sequence.`)
     }
 
-    let trackItem = await getTrackTrack(sequence, options.videoTrackIndex, options.trackItemIndex, TRACK_TYPE.VIDEO)
+    let trackItem = await getTrack(sequence, options.videoTrackIndex, options.trackItemIndex, TRACK_TYPE.VIDEO)
 
     let effectName = options.effectName
     let properties = options.properties
@@ -483,12 +483,16 @@ const addMarkerToSequence = async (command) => {
 
     let project = await app.Project.getActiveProject()
 
+    //Phase 1 cleanup: pass the requested marker type through (was hardcoded
+    //to "WebLink"). Valid types: Comment, Chapter, Segmentation, WebLink.
+    const markerType = options.markerType || "Comment";
+
     execute(() => {
 
         let start = app.TickTime.createWithTicks(startTimeTicks.toString())
         let duration = app.TickTime.createWithTicks(durationTicks.toString())
 
-        let action = markers.createAddMarkerAction(markerName, "WebLink",  start, duration, comments)
+        let action = markers.createAddMarkerAction(markerName, markerType,  start, duration, comments)
         return [action]
     }, project)
 

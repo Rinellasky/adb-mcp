@@ -23,6 +23,14 @@
 
 const app = require("premierepro");
 const core = require("./core");
+const sequenceEditor = require("./sequence_editor");
+const effects = require("./effects");
+const audio = require("./audio");
+const keyframes = require("./keyframes");
+const color = require("./color");
+const markersMetadata = require("./markers_metadata");
+const transcripts = require("./transcripts");
+const pipeline = require("./pipeline");
 
 const getProjectInfo = async () => {
     let project = await app.Project.getActiveProject()
@@ -130,7 +138,15 @@ const requiresActiveProject = (command) => {
 };
 
 const commandHandlers = {
-    ...core.commandHandlers
+    ...core.commandHandlers,
+    ...sequenceEditor.commandHandlers,
+    ...effects.commandHandlers,
+    ...audio.commandHandlers,
+    ...keyframes.commandHandlers,
+    ...color.commandHandlers,
+    ...markersMetadata.commandHandlers,
+    ...transcripts.commandHandlers,
+    ...pipeline.commandHandlers,
 };
 
 module.exports = {
