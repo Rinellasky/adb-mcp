@@ -21,52 +21,35 @@
  * SOFTWARE.
  */
 
-//const fs = require("uxp").storage.localFileSystem;
-//const openfs = require('fs')
-const {app, DocumentIntentOptions} = require("indesign");
+const { app } = require("indesign");
 
+const core = require("./core.js");
+const pages = require("./pages.js");
+const text = require("./text.js");
+const shapes = require("./shapes.js");
+const styles = require("./styles.js");
+const findchange = require("./findchange.js");
+const mastersTables = require("./masters_tables.js");
+const typography = require("./typography.js");
+const longdoc = require("./longdoc.js");
+const mergeTemplates = require("./merge_templates.js");
+const exportPreflight = require("./export_preflight.js");
+const geometryDocs = require("./geometry_docs.js");
 
-const createDocument = async (command) => {
-    console.log("createDocument")
-
-    const options = command.options
-
-    let documents = app.documents
-    let margins = options.margins
-
-    let unit = getUnitForIntent(DocumentIntentOptions.WEB_INTENT)
-
-    app.marginPreferences.bottom = `${margins.bottom}${unit}`
-    app.marginPreferences.top = `${margins.top}${unit}`
-    app.marginPreferences.left = `${margins.left}${unit}`
-    app.marginPreferences.right = `${margins.right}${unit}`
-
-    app.marginPreferences.columnCount = options.columns.count
-    app.marginPreferences.columnGutter = `${options.columns.gutter}${unit}`
-    
-
-    let documentPreferences = {
-        pageWidth: `${options.pageWidth}${unit}`,
-        pageHeight: `${options.pageHeight}${unit}`,
-        pagesPerDocument: options.pagesPerDocument,
-        facingPages: options.facingPages,
-        intent: DocumentIntentOptions.WEB_INTENT
-    }
-
-    const showingWindow = true
-    //Boolean showingWindow, DocumentPreset documentPreset, Object withProperties 
-    documents.add({showingWindow, documentPreferences})
-}
-
-
-const getUnitForIntent = (intent) => {
-
-    if(intent && intent.toString() === DocumentIntentOptions.WEB_INTENT.toString()) {
-        return "px"
-    }
-
-    throw new Error(`getUnitForIntent : unknown intent [${intent}]`)
-}
+const commandHandlers = {
+    ...core.commandHandlers,
+    ...pages.commandHandlers,
+    ...text.commandHandlers,
+    ...shapes.commandHandlers,
+    ...styles.commandHandlers,
+    ...findchange.commandHandlers,
+    ...mastersTables.commandHandlers,
+    ...typography.commandHandlers,
+    ...longdoc.commandHandlers,
+    ...mergeTemplates.commandHandlers,
+    ...exportPreflight.commandHandlers,
+    ...geometryDocs.commandHandlers,
+};
 
 const parseAndRouteCommand = async (command) => {
     let action = command.action;
@@ -76,61 +59,36 @@ const parseAndRouteCommand = async (command) => {
     if (typeof f !== "function") {
         throw new Error(`Unknown Command: ${action}`);
     }
-    
-    console.log(f.name)
+
+    console.log(f.name || action);
     return f(command);
 };
 
-
-const commandHandlers = {
-    createDocument
+/**
+ * Commands that do NOT require an open document.
+ */
+const requiresActiveDocument = (command) => {
+    return ![
+        "createDocument", "openDocument", "getActiveDocumentSettings",
+        "openAsTemplate", "createBook", "manageBook", "getDocuments",
+        "setActiveDocument", "listExportPresets", "debugEnums",
+    ].includes(command.action);
 };
 
-
-const getActiveDocumentSettings = (command) => {
-    const document = app.activeDocument
-
-
-    const d = document.documentPreferences
-    const documentPreferences = {
-        pageWidth:d.pageWidth,
-        pageHeight:d.pageHeight,
-        pagesPerDocument:d.pagesPerDocument,
-        facingPages:d.facingPages,
-        measurementUnit:getUnitForIntent(d.intent)
-    }
-
-    const marginPreferences = {
-        top:document.marginPreferences.top,
-        bottom:document.marginPreferences.bottom,
-        left:document.marginPreferences.left,
-        right:document.marginPreferences.right,
-        columnCount : document.marginPreferences.columnCount,
-        columnGutter : document.marginPreferences.columnGutter
-    }
-    return {documentPreferences, marginPreferences}
-}
-
 const checkRequiresActiveDocument = async (command) => {
-    if (!requiresActiveProject(command)) {
+    if (!requiresActiveDocument(command)) {
         return;
     }
 
-    let document = app.activeDocument
-    if (!document) {
+    if (app.documents.length === 0) {
         throw new Error(
             `${command.action} : Requires an open InDesign document`
         );
     }
 };
 
-const requiresActiveDocument = (command) => {
-    return !["createDocument"].includes(command.action);
-};
-
-
 module.exports = {
-    getActiveDocumentSettings,
+    getActiveDocumentSettings: core.getActiveDocumentSettings,
     checkRequiresActiveDocument,
-    parseAndRouteCommand
+    parseAndRouteCommand,
 };

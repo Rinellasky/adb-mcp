@@ -29,3 +29,15 @@ Icon
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# --- MCP runtime state (persisted server-side, machine-local)
+__pycache__/
+*.pyc
+mcp/action_sequences.json
+mcp/pr_action_sequences.json
+mcp/id_action_sequences.json
+mcp/neural_filter_presets.json
+
+# --- local test artifacts
+test-outputs/
+*.idlk
