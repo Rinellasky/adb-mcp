@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Build Photoshop MCP release artifacts (Photoshop-only fork).
+"""Build adb-mcp release artifacts.
 
-Produces, into ./dist:
-  - photoshop-mcp.dxt          Claude Desktop extension (MCP server bundle)
-  - photoshop-mcp-plugin.ccx   Adobe Photoshop UXP plugin package
+Produces, into ./dist, for each requested app:
+  - <app>-mcp.dxt          Claude Desktop extension (MCP server bundle)
+  - <app>-mcp-plugin.ccx   Adobe UXP plugin package
+
+Currently packaged apps: photoshop, indesign.
 
 Cross-platform (uses stdlib zipfile) so it runs identically in CI (Linux)
 and locally on Windows/macOS. The proxy executable is built separately in
 the release workflow via `pkg` (needs Node).
 
 Usage:
-    python scripts/build_release.py [VERSION]
+    python scripts/build_release.py [VERSION] [APP ...]
 
 If VERSION is omitted it is read from dxt/ps/manifest.json.
+If no APP is given, all apps are built.
 """
 from __future__ import annotations
 
@@ -25,15 +28,30 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 DIST = REPO / "dist"
 
-# Python modules that make up the MCP server, copied into the .dxt alongside
-# the manifest. Mirrors dxt/build's ps target.
-DXT_PY_FILES = [
+# Shared Python modules for every MCP server bundle.
+COMMON_PY_FILES = [
     "core.py",
     "logger.py",
-    "ps-mcp.py",
     "socket_client.py",
     "fonts.py",
 ]
+
+APPS = {
+    "photoshop": {
+        "dxt_dir": "ps",
+        "uxp_dir": "ps",
+        "server": "ps-mcp.py",
+        "dxt_out": "photoshop-mcp.dxt",
+        "ccx_out": "photoshop-mcp-plugin.ccx",
+    },
+    "indesign": {
+        "dxt_dir": "id",
+        "uxp_dir": "id",
+        "server": "id-mcp.py",
+        "dxt_out": "indesign-mcp.dxt",
+        "ccx_out": "indesign-mcp-plugin.ccx",
+    },
+}
 
 # Files/patterns to exclude from the .ccx plugin package.
 CCX_EXCLUDE_SUFFIXES = (".OGjs", ".OGpy")
@@ -45,18 +63,19 @@ def _add_file(zf: zipfile.ZipFile, src: Path, arcname: str) -> None:
     print(f"    + {arcname}")
 
 
-def build_dxt(version: str) -> Path:
-    """Zip dxt/ps/manifest.json + the MCP server .py files into a .dxt."""
-    src_dir = REPO / "dxt" / "ps"
+def build_dxt(app: str) -> Path:
+    """Zip dxt/<app>/manifest.json + the MCP server .py files into a .dxt."""
+    cfg = APPS[app]
+    src_dir = REPO / "dxt" / cfg["dxt_dir"]
     mcp_dir = REPO / "mcp"
-    out = DIST / "photoshop-mcp.dxt"
+    out = DIST / cfg["dxt_out"]
 
     manifest = json.loads((src_dir / "manifest.json").read_text(encoding="utf-8"))
     print(f"Building {out.name} (manifest version {manifest['version']})...")
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
         _add_file(zf, src_dir / "manifest.json", "manifest.json")
-        for name in DXT_PY_FILES:
+        for name in COMMON_PY_FILES + [cfg["server"]]:
             src = mcp_dir / name
             if not src.exists():
                 raise FileNotFoundError(f"required MCP file missing: {src}")
@@ -64,10 +83,11 @@ def build_dxt(version: str) -> Path:
     return out
 
 
-def build_ccx() -> Path:
-    """Zip the uxp/ps plugin folder into a double-click-installable .ccx."""
-    src_dir = REPO / "uxp" / "ps"
-    out = DIST / "photoshop-mcp-plugin.ccx"
+def build_ccx(app: str) -> Path:
+    """Zip the uxp/<app> plugin folder into a double-click-installable .ccx."""
+    cfg = APPS[app]
+    src_dir = REPO / "uxp" / cfg["uxp_dir"]
+    out = DIST / cfg["ccx_out"]
     print(f"Building {out.name}...")
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -84,21 +104,31 @@ def build_ccx() -> Path:
 def main() -> int:
     DIST.mkdir(exist_ok=True)
 
-    if len(sys.argv) > 1:
-        version = sys.argv[1].lstrip("v")
-    else:
+    args = [a for a in sys.argv[1:]]
+    version = None
+    apps: list[str] = []
+    for a in args:
+        if a in APPS:
+            apps.append(a)
+        else:
+            version = a.lstrip("v")
+    if not apps:
+        apps = list(APPS)
+    if version is None:
         manifest = json.loads(
             (REPO / "dxt" / "ps" / "manifest.json").read_text(encoding="utf-8")
         )
         version = manifest["version"]
 
-    print(f"=== Building Photoshop MCP release artifacts (v{version}) ===\n")
-    dxt = build_dxt(version)
-    print()
-    ccx = build_ccx()
-    print()
+    print(f"=== Building adb-mcp release artifacts (v{version}): {', '.join(apps)} ===\n")
+    artifacts = []
+    for app in apps:
+        artifacts.append(build_dxt(app))
+        print()
+        artifacts.append(build_ccx(app))
+        print()
     print("Done. Artifacts:")
-    for art in (dxt, ccx):
+    for art in artifacts:
         print(f"  {art}  ({art.stat().st_size:,} bytes)")
     return 0
 

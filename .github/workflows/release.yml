@@ -55,19 +55,21 @@ jobs:
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
-          name: photoshop-mcp-artifacts
+          name: adb-mcp-artifacts
           path: dist/*
 
       - name: Publish GitHub Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          name: Photoshop MCP ${{ github.ref_name }}
+          name: adb-mcp ${{ github.ref_name }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
             dist/photoshop-mcp.dxt
             dist/photoshop-mcp-plugin.ccx
+            dist/indesign-mcp.dxt
+            dist/indesign-mcp-plugin.ccx
             dist/adb-proxy-socket-win-x64.exe
             dist/adb-proxy-socket-macos-x64
             dist/adb-proxy-socket-macos-arm64

@@ -1,10 +1,28 @@
-# adb-mcp (Photoshop fork)
+# adb-mcp (extended fork)
 
-> **This is a Photoshop-focused fork of [mikechambers/adb-mcp](https://github.com/mikechambers/adb-mcp).**
-> It extends the original with **99 Photoshop tools** across selection, color/adjustment
-> layers, painting, layer styles, vector shapes/paths, frame animation, batch processing,
-> and neural filters — all live-verified against Photoshop 2026. Releases here package only
-> the Photoshop pieces. See the original repo for Premiere/InDesign/After Effects support.
+> **This is an extended fork of [mikechambers/adb-mcp](https://github.com/mikechambers/adb-mcp).**
+> It grows the original to **99 Photoshop tools** (selection, adjustments, painting, layer
+> styles, vector, animation, batch, neural filters), **110 Premiere tools** (sequence editing,
+> effects, keyframes, Lumetri, markers, transcripts, export pipeline), and **99 InDesign
+> tools** (layout, styles, GREP, masters, tables, typography, TOC/index, templates & data
+> merge, export/preflight, action sequences) — all live-verified against the 2026 apps.
+
+## ⚡ InDesign MCP — one-line install (Windows)
+
+```powershell
+irm https://raw.githubusercontent.com/Rinellasky/adb-mcp/master/install/install-indesign.ps1 | iex
+```
+
+That installs the MCP server into Claude Desktop, downloads the proxy, and installs the
+InDesign plugin (via Creative Cloud). Two manual clicks remain: start the proxy, and click
+**Connect** in InDesign's *InDesign MCP Agent* panel. Details in
+[`install/install-indesign.ps1`](install/install-indesign.ps1).
+
+**Letting an AI install it for you:** point any agent with shell access (Claude Desktop,
+Cowork, Claude Code...) at [`install/INSTALL_VIA_AI.md`](install/INSTALL_VIA_AI.md) — e.g.
+*"Follow https://github.com/Rinellasky/adb-mcp/blob/master/install/INSTALL_VIA_AI.md and
+install the InDesign MCP for me"*. The doc is written for agents: prerequisites, exact
+config JSON, the launch gotcha, and a troubleshooting table.
 
 adb-mcp enables AI control of Adobe Photoshop by providing an interface to LLMs via the MCP protocol.
 
@@ -59,8 +77,8 @@ Use this method if you want to try the system without modifying code.
 
 #### 1. Download Release Files
 Download the latest release from the [releases page](https://github.com/Rinellasky/adb-mcp/releases). Each release includes:
-- `photoshop-mcp.dxt` — Claude Desktop MCP installer (the MCP server)
-- `photoshop-mcp-plugin.ccx` — the Photoshop UXP plugin
+- `photoshop-mcp.dxt` / `indesign-mcp.dxt` — Claude Desktop MCP installers (the MCP servers)
+- `photoshop-mcp-plugin.ccx` / `indesign-mcp-plugin.ccx` — the UXP plugins
 - `adb-proxy-socket-win-x64.exe` — prebuilt proxy server (Windows; macOS builds also attached)
 - Source code (auto-attached by GitHub)
 
@@ -72,7 +90,7 @@ Download the latest release from the [releases page](https://github.com/Rinellas
 1. Launch Claude Desktop
 2. Double-click the appropriate .dxt file:
    - `photoshop-mcp.dxt` for Photoshop
-   - `premiere-mcp.dxt` for Premiere Pro
+   - `indesign-mcp.dxt` for InDesign
 3. Restart Claude Desktop
 
 #### Using Prebuilt Executables (Recommended)

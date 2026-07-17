@@ -1,0 +1,57 @@
+{
+  "dxt_version": "0.1",
+  "name": "adb-mcp-indesign",
+  "display_name": "Adobe InDesign MCP",
+  "version": "1.1.0",
+  "description": "AI Agent for Adobe InDesign: 99 tools (layout, text & styles, GREP find/change, masters, tables, typography, TOC/index, templates & data merge, export/preflight, batch orchestration) exposed to LLMs via the MCP protocol.",
+  "long_description": "Fork of Mike Chambers' adb-mcp, extended to 99 InDesign tools across document lifecycle & visual feedback (page previews the AI can see), pages/layers/guides, text frames & threading with overset reporting, shapes/swatches/images, paragraph/character/object styles, GREP find/change, master pages, tables, advanced typography, TOC/hyperlinks/cross-references/index, templates & data merge, PDF/IDML/EPUB export, preflight & packaging, and reusable action sequences. Exposes Adobe InDesign to any MCP-capable AI client (e.g. Claude Desktop).",
+  "author": {
+    "name": "Rinellasky",
+    "url": "https://github.com/Rinellasky"
+  },
+  "homepage": "https://github.com/Rinellasky/adb-mcp",
+  "documentation": "https://github.com/Rinellasky/adb-mcp",
+  "support": "https://github.com/Rinellasky/adb-mcp/issues",
+  "server": {
+    "type": "python",
+    "entry_point": "main.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "fonttools",
+        "--with",
+        "mcp",
+        "--with",
+        "mcp[cli]",
+        "--with",
+        "python-socketio",
+        "--with",
+        "requests",
+        "--with",
+        "numpy",
+        "--with",
+        "pillow",
+        "--with",
+        "websocket-client",
+        "mcp",
+        "run",
+        "${__dirname}/id-mcp.py"
+      ]
+    }
+  },
+  "keywords": [
+    "adobe",
+    "indesign",
+    "mcp",
+    "ai",
+    "page-layout",
+    "publishing"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rinellasky/adb-mcp"
+  }
+}
