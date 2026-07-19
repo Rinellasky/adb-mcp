@@ -70,6 +70,8 @@ jobs:
             dist/photoshop-mcp-plugin.ccx
             dist/indesign-mcp.dxt
             dist/indesign-mcp-plugin.ccx
+            dist/premiere-mcp.dxt
+            dist/premiere-mcp-plugin.ccx
             dist/adb-proxy-socket-win-x64.exe
             dist/adb-proxy-socket-macos-x64
             dist/adb-proxy-socket-macos-arm64

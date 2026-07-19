@@ -5,7 +5,7 @@ Produces, into ./dist, for each requested app:
   - <app>-mcp.dxt          Claude Desktop extension (MCP server bundle)
   - <app>-mcp-plugin.ccx   Adobe UXP plugin package
 
-Currently packaged apps: photoshop, indesign.
+Currently packaged apps: photoshop, indesign, premiere.
 
 Cross-platform (uses stdlib zipfile) so it runs identically in CI (Linux)
 and locally on Windows/macOS. The proxy executable is built separately in
@@ -50,6 +50,13 @@ APPS = {
         "server": "id-mcp.py",
         "dxt_out": "indesign-mcp.dxt",
         "ccx_out": "indesign-mcp-plugin.ccx",
+    },
+    "premiere": {
+        "dxt_dir": "pr",
+        "uxp_dir": "pr",
+        "server": "pr-mcp.py",
+        "dxt_out": "premiere-mcp.dxt",
+        "ccx_out": "premiere-mcp-plugin.ccx",
     },
 }
 

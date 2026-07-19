@@ -71,3 +71,41 @@ of this automatically.
   create a document first (`create_document`).
 - The panel's Connect button does nothing → check the UXP Developer Tool
   console for load errors and that no OS dialog is blocking InDesign.
+
+---
+
+## Premiere MCP variant
+
+Same procedure as above with these substitutions:
+
+| InDesign value | Premiere value |
+|---|---|
+| server file `id-mcp.py` | `pr-mcp.py` |
+| config entry `indesign-mcp` | `premiere-mcp` |
+| plugin asset `indesign-mcp-plugin.ccx` | `premiere-mcp-plugin.ccx` |
+| one-liner `install-indesign.ps1` | `install-premiere.ps1` |
+| panel *InDesign MCP Agent* | *Premiere MCP Agent* (in Premiere Pro **Beta**) |
+| health check `get_active_document_settings` | `get_project_info` |
+
+Health-check interpretation: a project payload OR the error `Requires an open
+Premiere Project` both mean the full chain is healthy. A fast `Could not connect
+to premiere` means the proxy is down or the panel is not connected. A ~4-minute
+timeout means a wedged call (see below).
+
+### Premiere-specific rules for agents (important)
+
+1. Never issue calls expected to exceed ~25 seconds through the Claude Desktop
+   bridge; a call that hits the 4-minute timeout can take down the entire local
+   tool runtime until Claude Desktop restarts. Run long work detached and poll.
+2. Timeout does not mean failure — verify actual state with `get_project_info`
+   before retrying any mutation.
+3. Known issue (Premiere Beta 26.5, since ~2026-07-10): timeline-write tools can
+   hang — `overwrite_clip_at_time`, `set_source_in_out`,
+   `assemble_timeline_from_plan`, multi-item `create_sequence_from_media` — and a
+   hung call holds the project lock so later writes hang too. Verified working:
+   `get_project_info`, `get_media_info`, `import_media` (1–2 files),
+   `create_sequence_from_media` (single item), `export_frame`.
+4. Recovery from a wedge: restart Premiere (releases the lock), restart Claude
+   Desktop (restores the runtime), reconnect the panel, re-run the health check.
+
+Full analysis: `FINDINGS_2026-07-12_premiere_live_session.md` (repo root).

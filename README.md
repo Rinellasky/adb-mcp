@@ -5,9 +5,9 @@
 > styles, vector, animation, batch, neural filters), **110 Premiere tools** (sequence editing,
 > effects, keyframes, Lumetri, markers, transcripts, export pipeline), and **99 InDesign
 > tools** (layout, styles, GREP, masters, tables, typography, TOC/index, templates & data
-> merge, export/preflight, action sequences) — all live-verified against the 2026 apps.
+> merge, export/preflight, action sequences) â€” all live-verified against the 2026 apps.
 
-## ⚡ InDesign MCP — one-line install (Windows)
+## âš¡ InDesign MCP â€” one-line install (Windows)
 
 ```powershell
 irm https://raw.githubusercontent.com/Rinellasky/adb-mcp/master/install/install-indesign.ps1 | iex
@@ -19,10 +19,27 @@ InDesign plugin (via Creative Cloud). Two manual clicks remain: start the proxy,
 [`install/install-indesign.ps1`](install/install-indesign.ps1).
 
 **Letting an AI install it for you:** point any agent with shell access (Claude Desktop,
-Cowork, Claude Code...) at [`install/INSTALL_VIA_AI.md`](install/INSTALL_VIA_AI.md) — e.g.
+Cowork, Claude Code...) at [`install/INSTALL_VIA_AI.md`](install/INSTALL_VIA_AI.md) â€” e.g.
 *"Follow https://github.com/Rinellasky/adb-mcp/blob/master/install/INSTALL_VIA_AI.md and
 install the InDesign MCP for me"*. The doc is written for agents: prerequisites, exact
 config JSON, the launch gotcha, and a troubleshooting table.
+
+## ⚡ Premiere MCP — one-line install (Windows)
+
+```powershell
+irm https://raw.githubusercontent.com/Rinellasky/adb-mcp/master/install/install-premiere.ps1 | iex
+```
+
+That installs the MCP server into Claude Desktop, downloads the proxy, and installs the
+Premiere plugin (via Creative Cloud). Two manual clicks remain: start the proxy, and click
+**Connect** in Premiere's *Premiere MCP Agent* panel (Premiere Pro **Beta**). AI-driven
+install: same [`install/INSTALL_VIA_AI.md`](install/INSTALL_VIA_AI.md) doc — it has a
+Premiere section with agent-specific rules.
+
+> **Known issue:** Premiere Beta 26.5 changed UXP APIs — some timeline-write tools can
+> hang until the compatibility patch lands. Reads, imports, single-item sequence creation,
+> and frame export are verified working. Details:
+> [`FINDINGS_2026-07-12_premiere_live_session.md`](FINDINGS_2026-07-12_premiere_live_session.md).
 
 adb-mcp enables AI control of Adobe Photoshop by providing an interface to LLMs via the MCP protocol.
 
@@ -77,9 +94,9 @@ Use this method if you want to try the system without modifying code.
 
 #### 1. Download Release Files
 Download the latest release from the [releases page](https://github.com/Rinellasky/adb-mcp/releases). Each release includes:
-- `photoshop-mcp.dxt` / `indesign-mcp.dxt` — Claude Desktop MCP installers (the MCP servers)
-- `photoshop-mcp-plugin.ccx` / `indesign-mcp-plugin.ccx` — the UXP plugins
-- `adb-proxy-socket-win-x64.exe` — prebuilt proxy server (Windows; macOS builds also attached)
+- `photoshop-mcp.dxt` / `indesign-mcp.dxt` â€” Claude Desktop MCP installers (the MCP servers)
+- `photoshop-mcp-plugin.ccx` / `indesign-mcp-plugin.ccx` â€” the UXP plugins
+- `adb-proxy-socket-win-x64.exe` â€” prebuilt proxy server (Windows; macOS builds also attached)
 - Source code (auto-attached by GitHub)
 
 #### 2. Install Claude Desktop
@@ -103,7 +120,7 @@ Download the latest release from the [releases page](https://github.com/Rinellas
      ```cmd
      adb-proxy-socket-win-x64.exe
      ```
-   - **macOS** (Intel or Apple Silicon) — mark it executable first, then run:
+   - **macOS** (Intel or Apple Silicon) â€” mark it executable first, then run:
      ```bash
      chmod +x ./adb-proxy-socket-macos-x64   # or -arm64
      ./adb-proxy-socket-macos-x64
@@ -112,7 +129,7 @@ Download the latest release from the [releases page](https://github.com/Rinellas
 4. You should see a message like:  
    `Photoshop MCP Command proxy server running on ws://localhost:3001`
 
-5. **Keep this running** — the proxy server must stay active for Claude to communicate with Adobe plugins.
+5. **Keep this running** â€” the proxy server must stay active for Claude to communicate with Adobe plugins.
 
 
 #### 5. Install Adobe Plugins
