@@ -133,3 +133,176 @@ BLEND_MODES = [
     "SUBTRACT",
     "VIVID_LIGHT"
 ]
+
+# ---------------------------------------------------------------------
+# Priority 1: Project & Import Foundation
+# ---------------------------------------------------------------------
+
+from typing import Optional
+
+
+@mcp.tool()
+def create_project(force: bool = False):
+    """
+    Creates a new, empty After Effects project.
+
+    WARNING: this replaces the currently open project. If the current
+    project has unsaved changes this call fails unless force=True is
+    passed (in which case changes are silently discarded). Save first
+    if in doubt.
+
+    Args:
+        force (bool): If True, discard unsaved changes in the current
+            project. Default False (safer).
+    """
+    command = createCommand("createProject", {
+        "force": force
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def open_project(path: str, force: bool = False):
+    """
+    Opens an existing After Effects project file (.aep).
+
+    If the currently open project has unsaved changes this call fails
+    unless force=True is passed (in which case changes are silently
+    discarded).
+
+    Args:
+        path (str): Absolute filesystem path to the .aep file.
+        force (bool): If True, discard unsaved changes in the current
+            project. Default False (safer).
+    """
+    command = createCommand("openProject", {
+        "path": path,
+        "force": force
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def save_project():
+    """
+    Saves the currently open project to its existing file location.
+    Fails with a clear error if the project has never been saved
+    (no file path yet) - use save_project_as in that case.
+    """
+    command = createCommand("saveProject", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def save_project_as(path: str):
+    """
+    Saves the currently open project to a new file path (Save As).
+    Subsequent save_project calls target this new path.
+
+    Args:
+        path (str): Absolute filesystem path to save the .aep file to.
+    """
+    command = createCommand("saveProjectAs", {
+        "path": path
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_project_info():
+    """
+    Returns a full inventory of the currently open project - THE health
+    check tool. Call this before trusting any other tool in a session.
+
+    Returns: project name, file path (or null if unsaved), dirty flag
+    (unsaved changes), and a flat list of every project item
+    (Composition / Footage / Folder) with id, name, type, and
+    parentFolderId. These ids are the namespace all other tools
+    (import_file, move_items_to_folder, and later composition tools)
+    operate on.
+    """
+    command = createCommand("getProjectInfo", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_compositions():
+    """
+    Lists all compositions in the project with id, name, width, height,
+    duration (seconds), and frameRate.
+    """
+    command = createCommand("getCompositions", {})
+    return sendCommand(command)
+
+
+@mcp.tool()
+def import_file(path: str, folder_id: Optional[int] = None):
+    """
+    Imports a footage file (video, image, or audio) into the project.
+
+    Args:
+        path (str): Absolute filesystem path to the file to import.
+        folder_id (int, optional): If provided, the imported item is
+            filed into this project folder (id from get_project_info or
+            create_project_folder). Omit to import into the project root.
+    """
+    command = createCommand("importFile", {
+        "path": path,
+        "folderId": folder_id
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def import_image_sequence(path: str, folder_id: Optional[int] = None):
+    """
+    Imports a numbered image sequence (e.g. frame_0001.png ...) as a
+    single footage item.
+
+    Args:
+        path (str): Absolute path to the FIRST file in the sequence -
+            AE detects and imports the rest of the numbered series.
+        folder_id (int, optional): Project folder to file the item into.
+            Omit to import into the project root.
+    """
+    command = createCommand("importImageSequence", {
+        "path": path,
+        "folderId": folder_id
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def create_project_folder(name: str, parent_folder_id: Optional[int] = None):
+    """
+    Creates a new folder in the Project panel.
+
+    Args:
+        name (str): Folder display name.
+        parent_folder_id (int, optional): id of an existing folder to
+            nest this one inside. Omit to create at the project root.
+    """
+    command = createCommand("createProjectFolder", {
+        "name": name,
+        "parentFolderId": parent_folder_id
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def move_items_to_folder(item_ids: list[int], folder_id: Optional[int] = None):
+    """
+    Moves one or more project items (comps, footage, or folders) into a
+    folder in a single batch call (one undo step).
+
+    Args:
+        item_ids (list[int]): ids of the items to move (from
+            get_project_info, import_file, etc.).
+        folder_id (int, optional): Destination folder id. Omit to move
+            the items to the project ROOT, out of any folder.
+    """
+    command = createCommand("moveItemsToFolder", {
+        "itemIds": item_ids,
+        "folderId": folder_id
+    })
+    return sendCommand(command)
