@@ -79,5 +79,5 @@ That hypothesis is **not supported**:
   extension, permission opt-ins, epitaxy permission modes); newer UI state
   kept. Pre-edit copies: `claude_desktop_config.json.pre-restore` and
   `.pre-prefs-restore`.
-- STILL OPEN: rotate the plaintext GitHub PAT (`ghp_...`) in the `github`
-  server env — it lives in the restored config AND the `.bak`.
+- RESOLVED 2026-07-21: the plaintext GitHub PAT in the `github` server env
+  was rotated (old token in the restored config and `.bak` is now dead).
