@@ -65,12 +65,19 @@ That hypothesis is **not supported**:
    unexpected transport closes. Two processes fighting over 3001 is the
    plausible bridge destabilizer, not ae-mcp.py.
 
-### Recommended follow-ups (not done here)
+### Follow-ups — RESOLVED later the same session
 
-- Re-add the `mcpServers` block from the `.bak` (plus the aftereffects-mcp
-  entry, `mcp run ae-mcp.py` style like ps/pr) — decide which of the 17 old
-  entries are still wanted first.
-- Move token-meter's WS port off 3001 (or move the adb proxy) before
-  re-registering both.
-- The `.bak` contains a plaintext GitHub PAT (`ghp_...`) in the `github`
-  server env — rotate it and keep it out of config backups.
+- Config fully restored (2026-07-20, Desktop closed during edit): all 17
+  `mcpServers` entries from the `.bak` plus a new `aftereffects-mcp` entry
+  (`uv run --directory ...\mcp mcp run ae-mcp.py`, same pattern as ps/pr;
+  launch command smoke-tested, exit 0).
+- token-meter moved to `TOKEN_METER_WS_PORT=3002`. The adb proxy KEEPS
+  3001 — that port is hardcoded in the CEP/UXP panels, all five mcp/*.py
+  servers, and the dist exe, so token-meter (one env var) was the right
+  side to move.
+- Wiped preferences restored from `.bak` (trusted folders, chrome
+  extension, permission opt-ins, epitaxy permission modes); newer UI state
+  kept. Pre-edit copies: `claude_desktop_config.json.pre-restore` and
+  `.pre-prefs-restore`.
+- STILL OPEN: rotate the plaintext GitHub PAT (`ghp_...`) in the `github`
+  server env — it lives in the restored config AND the `.bak`.
