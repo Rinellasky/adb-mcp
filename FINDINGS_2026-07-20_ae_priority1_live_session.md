@@ -71,7 +71,8 @@ That hypothesis is **not supported**:
   `mcpServers` entries from the `.bak` plus a new `aftereffects-mcp` entry
   (`uv run --directory ...\mcp mcp run ae-mcp.py`, same pattern as ps/pr;
   launch command smoke-tested, exit 0).
-- token-meter moved to `TOKEN_METER_WS_PORT=3002`. The adb proxy KEEPS
+- token-meter moved to `TOKEN_METER_WS_PORT=3002` (later re-moved to
+  **3999**, its final home everywhere as of 2026-07-21). The adb proxy KEEPS
   3001 — that port is hardcoded in the CEP/UXP panels, all five mcp/*.py
   servers, and the dist exe, so token-meter (one env var) was the right
   side to move.
