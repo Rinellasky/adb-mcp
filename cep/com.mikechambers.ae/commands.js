@@ -43,6 +43,13 @@ const AE_HELPERS = `
         var _p = (group !== null) ? group.property(matchName) : null;
         return (_p !== null && _p !== undefined) ? _p.value : null;
     }
+    function findLayerByIndex(comp, index) {
+        if (index < 1 || index > comp.numLayers) { return null; }
+        return comp.layer(index);
+    }
+    function summarizeLayer(layer) {
+        return { index: layer.index, name: layer.name };
+    }
     function summarizeItem(item) {
         var typeName = "Unknown";
         if (item instanceof CompItem) { typeName = "Composition"; }
@@ -703,6 +710,593 @@ async function addCompositionMarker(command) {
     return createPacket(await executeAECommand(script));
 }
 
+// ---------------------------------------------------------------------
+// Priority 3: The Layer System
+// ---------------------------------------------------------------------
+// - Layers are addressed by (compId, layerIndex). AE layer indices are
+//   1-based and SHIFT when layers are added/removed/reordered — every
+//   mutation returns enough state to re-anchor, and agents should re-read
+//   getCompositionDetails after structural changes.
+// - set_layer_transform refuses to setValue on a property that has
+//   keyframes (AE throws anyway; we return a clear error pointing to the
+//   Phase 2 keyframe tools instead of a raw ExtendScript exception).
+// - New layers land at index 1 (top of stack) per AE behavior.
+
+async function addSolidLayer(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Solid Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var w = ${JSON.stringify(o.width)} !== null ? ${JSON.stringify(o.width)} : comp.width;
+                var h = ${JSON.stringify(o.height)} !== null ? ${JSON.stringify(o.height)} : comp.height;
+                var dur = ${JSON.stringify(o.durationSeconds)} !== null ? ${JSON.stringify(o.durationSeconds)} : comp.duration;
+                var layer = comp.layers.addSolid(
+                    ${JSON.stringify(o.color)},
+                    ${JSON.stringify(o.name)},
+                    w, h, comp.pixelAspect, dur
+                );
+                return JSON.stringify({success: true, index: layer.index, name: layer.name, sourceId: layer.source.id});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function addTextLayer(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Text Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = comp.layers.addText(${JSON.stringify(o.text)});
+                return JSON.stringify({success: true, index: layer.index, name: layer.name});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function addNullLayer(command) {
+    const o = command.options || {};
+    const durationSeconds = (o.durationSeconds === undefined || o.durationSeconds === null) ? "null" : JSON.stringify(o.durationSeconds);
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Null Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var dur = ${durationSeconds};
+                var layer = (dur !== null) ? comp.layers.addNull(dur) : comp.layers.addNull();
+                if (${JSON.stringify(o.name)} !== null) { layer.name = ${JSON.stringify(o.name)}; }
+                return JSON.stringify({success: true, index: layer.index, name: layer.name});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function addAdjustmentLayer(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Adjustment Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = comp.layers.addSolid([1, 1, 1], ${JSON.stringify(o.name)},
+                    comp.width, comp.height, comp.pixelAspect, comp.duration);
+                layer.adjustmentLayer = true;
+                return JSON.stringify({success: true, index: layer.index, name: layer.name});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function addShapeLayer(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Shape Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = comp.layers.addShape();
+                if (${JSON.stringify(o.name)} !== null) { layer.name = ${JSON.stringify(o.name)}; }
+                return JSON.stringify({success: true, index: layer.index, name: layer.name});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function addFootageLayer(command) {
+    const o = command.options || {};
+    const durationSeconds = (o.durationSeconds === undefined || o.durationSeconds === null) ? "null" : JSON.stringify(o.durationSeconds);
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Footage Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var item = findItemById(${JSON.stringify(o.itemId)});
+                if (item === null || item instanceof FolderItem) {
+                    return JSON.stringify({error: "Footage/comp item not found: id " + ${JSON.stringify(o.itemId)}});
+                }
+                var dur = ${durationSeconds};
+                var layer = (dur !== null) ? comp.layers.add(item, dur) : comp.layers.add(item);
+                return JSON.stringify({success: true, index: layer.index, name: layer.name, sourceId: item.id});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function addCameraLayer(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Camera Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var cp = ${JSON.stringify(o.centerPoint)};
+                if (cp === null) { cp = [comp.width / 2, comp.height / 2]; }
+                var layer = comp.layers.addCamera(${JSON.stringify(o.name)}, cp);
+                return JSON.stringify({success: true, index: layer.index, name: layer.name});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function addLightLayer(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Light Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var cp = ${JSON.stringify(o.centerPoint)};
+                if (cp === null) { cp = [comp.width / 2, comp.height / 2]; }
+                var layer = comp.layers.addLight(${JSON.stringify(o.name)}, cp);
+                return JSON.stringify({success: true, index: layer.index, name: layer.name, lightType: String(layer.lightType)});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// Partial update: only provided switches are touched.
+async function setLayerProperties(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Layer Properties");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var opts = ${JSON.stringify({
+                    name: o.name === undefined ? null : o.name,
+                    enabled: o.enabled === undefined ? null : o.enabled,
+                    solo: o.solo === undefined ? null : o.solo,
+                    locked: o.locked === undefined ? null : o.locked,
+                    shy: o.shy === undefined ? null : o.shy
+                })};
+                // AE 26.x: solo cannot coexist with a disabled layer - a
+                // combined solo=true + enabled=false either throws ("Solo
+                // flag can not be set on a layer if the layer is not
+                // enabled") or is silently cleared. Refuse it explicitly.
+                if (opts.solo === true && (opts.enabled === false ||
+                        (opts.enabled === null && layer.enabled !== true))) {
+                    return JSON.stringify({error: "solo=true requires an enabled layer (AE constraint) - pass enabled=true or enable the layer first."});
+                }
+                if (opts.name !== null) { layer.name = opts.name; }
+                if (opts.enabled === true) { layer.enabled = true; }
+                if (opts.solo !== null) { layer.solo = opts.solo; }
+                if (opts.shy !== null) { layer.shy = opts.shy; }
+                if (opts.enabled === false) { layer.enabled = false; }
+                if (opts.locked !== null) { layer.locked = opts.locked; }
+                return JSON.stringify({
+                    success: true, index: layer.index, name: layer.name,
+                    enabled: layer.enabled, solo: layer.solo === true,
+                    locked: layer.locked === true, shy: layer.shy === true
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// NOTE: locked layers throw on remove(); unlock first via
+// set_layer_properties. The error message says so.
+async function deleteLayer(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Delete Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                if (layer.locked === true) {
+                    return JSON.stringify({error: "Layer '" + layer.name + "' is locked. Unlock it first with set_layer_properties."});
+                }
+                var deletedName = layer.name;
+                layer.remove();
+                return JSON.stringify({success: true, deletedName: deletedName, numLayers: comp.numLayers});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function duplicateLayer(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Duplicate Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var dup = layer.duplicate();
+                if (${JSON.stringify(o.name)} !== null) { dup.name = ${JSON.stringify(o.name)}; }
+                return JSON.stringify({success: true, index: dup.index, name: dup.name, sourceLayerIndex: layer.index});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// position: "before" | "after" (relative to targetIndex), or
+// "top" | "bottom" (targetIndex ignored).
+async function reorderLayer(command) {
+    const o = command.options || {};
+    const targetIndex = (o.targetIndex === undefined || o.targetIndex === null) ? "null" : JSON.stringify(o.targetIndex);
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Reorder Layer");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var position = ${JSON.stringify(o.position)};
+                var targetIndex = ${targetIndex};
+                if (position === "top") {
+                    layer.moveToBeginning();
+                } else if (position === "bottom") {
+                    layer.moveToEnd();
+                } else {
+                    if (targetIndex === null) {
+                        return JSON.stringify({error: "targetIndex is required for position '" + position + "'"});
+                    }
+                    var target = findLayerByIndex(comp, targetIndex);
+                    if (target === null) {
+                        return JSON.stringify({error: "Target layer not found: index " + targetIndex});
+                    }
+                    if (position === "before") { layer.moveBefore(target); }
+                    else if (position === "after") { layer.moveAfter(target); }
+                    else {
+                        return JSON.stringify({error: "position must be 'before', 'after', 'top', or 'bottom' - got '" + position + "'"});
+                    }
+                }
+                return JSON.stringify({success: true, index: layer.index, name: layer.name});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// Partial update of inPoint / outPoint / startTime (seconds).
+async function setLayerTimes(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Layer Times");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var opts = ${JSON.stringify({
+                    startTime: o.startTime === undefined ? null : o.startTime,
+                    inPoint: o.inPoint === undefined ? null : o.inPoint,
+                    outPoint: o.outPoint === undefined ? null : o.outPoint
+                })};
+                if (opts.startTime !== null) { layer.startTime = opts.startTime; }
+                if (opts.inPoint !== null) { layer.inPoint = opts.inPoint; }
+                if (opts.outPoint !== null) { layer.outPoint = opts.outPoint; }
+                return JSON.stringify({
+                    success: true, index: layer.index,
+                    startTime: layer.startTime, inPoint: layer.inPoint, outPoint: layer.outPoint
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// Partial transform update. Refuses properties that carry keyframes
+// (setValue would throw); those belong to the Phase 2 keyframe tools.
+async function setLayerTransform(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Layer Transform");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var t = layer.property("ADBE Transform Group");
+                var opts = ${JSON.stringify({
+                    anchorPoint: o.anchorPoint === undefined ? null : o.anchorPoint,
+                    position: o.position === undefined ? null : o.position,
+                    scale: o.scale === undefined ? null : o.scale,
+                    rotation: o.rotation === undefined ? null : o.rotation,
+                    rotationX: o.rotationX === undefined ? null : o.rotationX,
+                    rotationY: o.rotationY === undefined ? null : o.rotationY,
+                    opacity: o.opacity === undefined ? null : o.opacity
+                })};
+                var map = [
+                    ["anchorPoint", "ADBE Anchor Point"],
+                    ["position", "ADBE Position"],
+                    ["scale", "ADBE Scale"],
+                    ["rotation", "ADBE Rotate Z"],
+                    ["rotationX", "ADBE Rotate X"],
+                    ["rotationY", "ADBE Rotate Y"],
+                    ["opacity", "ADBE Opacity"]
+                ];
+                var applied = [];
+                var errors = [];
+                for (var i = 0; i < map.length; i++) {
+                    var key = map[i][0];
+                    var matchName = map[i][1];
+                    if (opts[key] === null) { continue; }
+                    var prop = t.property(matchName);
+                    if (prop === null || prop === undefined) {
+                        errors.push(key + ": property not available on this layer type");
+                        continue;
+                    }
+                    if (prop.numKeys > 0) {
+                        errors.push(key + ": property has " + prop.numKeys + " keyframes - use the keyframe tools instead of setValue");
+                        continue;
+                    }
+                    prop.setValue(opts[key]);
+                    applied.push(key);
+                }
+                if (errors.length > 0 && applied.length === 0) {
+                    return JSON.stringify({error: errors.join("; ")});
+                }
+                return JSON.stringify({
+                    success: true, index: layer.index,
+                    applied: applied, skipped: errors,
+                    anchorPoint: propValue(t, "ADBE Anchor Point"),
+                    position: propValue(t, "ADBE Position"),
+                    scale: propValue(t, "ADBE Scale"),
+                    rotation: propValue(t, "ADBE Rotate Z"),
+                    opacity: propValue(t, "ADBE Opacity")
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// parentIndex: layer index to parent to, or null to unparent.
+async function setLayerParent(command) {
+    const o = command.options || {};
+    const parentIndex = (o.parentIndex === undefined || o.parentIndex === null) ? "null" : JSON.stringify(o.parentIndex);
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Layer Parent");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var parentIndex = ${parentIndex};
+                if (parentIndex === null) {
+                    layer.parent = null;
+                    return JSON.stringify({success: true, index: layer.index, parentIndex: null});
+                }
+                if (parentIndex === layer.index) {
+                    return JSON.stringify({error: "A layer cannot be parented to itself."});
+                }
+                var parent = findLayerByIndex(comp, parentIndex);
+                if (parent === null) {
+                    return JSON.stringify({error: "Parent layer not found: index " + parentIndex});
+                }
+                layer.parent = parent;
+                return JSON.stringify({success: true, index: layer.index, parentIndex: layer.parent.index});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// Precomposes the given layer indices into a new comp. moveAllAttributes
+// must be true when precomposing multiple layers (AE API constraint).
+async function precomposeLayers(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Precompose Layers");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var indices = ${JSON.stringify(o.layerIndices || [])};
+                if (indices.length === 0) {
+                    return JSON.stringify({error: "layerIndices must contain at least one layer index."});
+                }
+                for (var i = 0; i < indices.length; i++) {
+                    if (findLayerByIndex(comp, indices[i]) === null) {
+                        return JSON.stringify({error: "Layer not found: index " + indices[i] + " (comp has " + comp.numLayers + " layers)"});
+                    }
+                }
+                var moveAll = ${JSON.stringify(o.moveAllAttributes === undefined ? true : o.moveAllAttributes)};
+                if (indices.length > 1 && moveAll !== true) {
+                    return JSON.stringify({error: "moveAllAttributes must be true when precomposing multiple layers (AE API constraint)."});
+                }
+                var newComp = comp.layers.precompose(indices, ${JSON.stringify(o.name)}, moveAll);
+                var precompLayerIndex = null;
+                for (var j = 1; j <= comp.numLayers; j++) {
+                    if (comp.layer(j).source !== null && comp.layer(j).source !== undefined && comp.layer(j).source.id === newComp.id) {
+                        precompLayerIndex = j;
+                        break;
+                    }
+                }
+                return JSON.stringify({
+                    success: true,
+                    newCompId: newComp.id,
+                    newCompName: newComp.name,
+                    precompLayerIndex: precompLayerIndex,
+                    numLayersInNewComp: newComp.numLayers
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
 const createPacket = (result) => {
     return {
         content: [{
@@ -744,5 +1338,21 @@ const commandHandlers = {
     setCompositionSettings,
     setWorkArea,
     addCompositionMarker,
+    addSolidLayer,
+    addTextLayer,
+    addNullLayer,
+    addAdjustmentLayer,
+    addShapeLayer,
+    addFootageLayer,
+    addCameraLayer,
+    addLightLayer,
+    setLayerProperties,
+    deleteLayer,
+    duplicateLayer,
+    reorderLayer,
+    setLayerTimes,
+    setLayerTransform,
+    setLayerParent,
+    precomposeLayers,
     getCompositions: async (command) => createPacket(await getCompositions())
 };

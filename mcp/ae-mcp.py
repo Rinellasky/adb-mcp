@@ -86,14 +86,41 @@ def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use AfterEffects and this API"""
 
     return f"""
-    You are an Adobe AfterEffects expert who is practical, clear, and great at teaching.
+    You are an Adobe After Effects expert driving AE through this server's
+    typed tools. Read this before calling anything.
 
-    Rules to follow:
+    THE TOOL MODEL
 
-    1. Think deeply about how to solve the task.
-    2. Always check your work before responding.
-    3. Read the API call info to understand required arguments and return shapes.
-    4. Before manipulating anything, ensure a document is open and active.
+    1. Read first, then mutate. get_project_info is the health check -
+       call it at session start; if it fails, fix the environment before
+       anything else. get_composition_details is THE keystone read: the
+       full layer tree with types, switches, timing, parenting, transforms,
+       and applied effects. Call it before and after layer mutations.
+    2. Addressing: project items (comps, footage, folders) are addressed
+       by their permanent numeric id. LAYERS are addressed by
+       (comp_id, layer_index) where layer_index is 1-BASED and SHIFTS
+       whenever layers are added, removed, or reordered - new layers land
+       at index 1 (top of stack). After any structural change, re-read
+       get_composition_details before making further layer_index-based
+       calls; stale indices silently hit the wrong layer.
+    3. Times are in SECONDS everywhere (comp durations, layer
+       start/in/out, markers, frame renders).
+    4. Properties and effects are identified by matchName (e.g.
+       "ADBE Transform Group", "ADBE Position") - stable across AE
+       versions and locales, unlike display names.
+    5. One tool call = one undo step, named "MCP: ..." in the Edit menu.
+       Partial-update tools (set_layer_properties, set_layer_transform,
+       set_layer_times, set_composition_settings) only touch the
+       arguments you pass; everything omitted is left as-is.
+    6. set_layer_transform refuses properties that already have keyframes
+       (they come back in skipped[] with an explanation) - animated
+       properties belong to the keyframe tools.
+    7. get_frame_image renders a frame and returns it as an image - use
+       it as the visual feedback loop to verify your work.
+    8. execute_extend_script is the escape hatch for anything without a
+       typed tool. Prefer typed tools: they guard against modal dialogs
+       and return structured errors. Scripts must use 'return' and never
+       trigger UI dialogs (a modal hangs the whole bridge).
     """
 
 
@@ -516,5 +543,374 @@ def add_composition_marker(comp_id: int, time_seconds: float, comment: str,
         "timeSeconds": time_seconds,
         "comment": comment,
         "durationSeconds": duration_seconds
+    })
+    return sendCommand(command)
+
+# ---------------------------------------------------------------------
+# Priority 3: The Layer System
+# ---------------------------------------------------------------------
+# Layer addressing: (comp_id, layer_index). AE layer indices are 1-based
+# and SHIFT when layers are added/removed/reordered - re-read
+# get_composition_details after structural changes before further
+# layer_index-based calls.
+
+
+@mcp.tool()
+def add_solid_layer(comp_id: int, name: str,
+                    color: list[float] = [1.0, 1.0, 1.0],
+                    width: Optional[int] = None, height: Optional[int] = None,
+                    duration_seconds: Optional[float] = None):
+    """
+    Adds a solid color layer to a composition (lands at top, index 1).
+
+    Args:
+        comp_id (int): Composition id.
+        name (str): Layer/solid name.
+        color (list[float]): [r, g, b], each 0.0-1.0. Default white.
+        width (int, optional): Solid width. Defaults to comp width.
+        height (int, optional): Solid height. Defaults to comp height.
+        duration_seconds (float, optional): Defaults to comp duration.
+    """
+    command = createCommand("addSolidLayer", {
+        "compId": comp_id, "name": name, "color": color,
+        "width": width, "height": height,
+        "durationSeconds": duration_seconds
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_text_layer(comp_id: int, text: str):
+    """
+    Adds a text layer with the given source text (lands at top, index 1).
+    Styling (font, size, color) comes with the Phase 2 text tools.
+
+    Args:
+        comp_id (int): Composition id.
+        text (str): The text content.
+    """
+    command = createCommand("addTextLayer", {
+        "compId": comp_id, "text": text
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_null_layer(comp_id: int, name: Optional[str] = None,
+                   duration_seconds: Optional[float] = None):
+    """
+    Adds a null object layer - the standard rigging anchor to parent
+    other layers to (see set_layer_parent).
+
+    Args:
+        comp_id (int): Composition id.
+        name (str, optional): Rename the null (default "Null N").
+        duration_seconds (float, optional): Defaults to comp duration.
+    """
+    command = createCommand("addNullLayer", {
+        "compId": comp_id, "name": name,
+        "durationSeconds": duration_seconds
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_adjustment_layer(comp_id: int, name: str):
+    """
+    Adds a comp-sized adjustment layer - effects applied to it affect
+    all layers below it.
+
+    Args:
+        comp_id (int): Composition id.
+        name (str): Layer name.
+    """
+    command = createCommand("addAdjustmentLayer", {
+        "compId": comp_id, "name": name
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_shape_layer(comp_id: int, name: Optional[str] = None):
+    """
+    Adds an empty shape layer. Shape contents (rectangles, ellipses,
+    paths, fills, strokes) come with the Phase 2 shape tools.
+
+    Args:
+        comp_id (int): Composition id.
+        name (str, optional): Layer name.
+    """
+    command = createCommand("addShapeLayer", {
+        "compId": comp_id, "name": name
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_footage_layer(comp_id: int, item_id: int,
+                      duration_seconds: Optional[float] = None):
+    """
+    Adds a project item (imported footage, image, audio, or another
+    composition) as a layer in a composition.
+
+    Args:
+        comp_id (int): Target composition id.
+        item_id (int): Project item id (from get_project_info /
+            import_file / get_compositions). Adding a comp creates a
+            nested comp layer.
+        duration_seconds (float, optional): For still images, the layer
+            duration. Omit for footage default.
+    """
+    command = createCommand("addFootageLayer", {
+        "compId": comp_id, "itemId": item_id,
+        "durationSeconds": duration_seconds
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_camera_layer(comp_id: int, name: str,
+                     center_point: Optional[list[float]] = None):
+    """
+    Adds a camera layer. Cameras only affect 3D layers. Camera settings
+    (zoom, depth of field) come in Phase 3.
+
+    Args:
+        comp_id (int): Composition id.
+        name (str): Camera name.
+        center_point (list[float], optional): [x, y] point of interest
+            in comp space. Defaults to comp center.
+    """
+    command = createCommand("addCameraLayer", {
+        "compId": comp_id, "name": name, "centerPoint": center_point
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_light_layer(comp_id: int, name: str,
+                    center_point: Optional[list[float]] = None):
+    """
+    Adds a light layer. Lights only affect 3D layers. Light settings
+    (type, color, intensity) come in Phase 3.
+
+    Args:
+        comp_id (int): Composition id.
+        name (str): Light name.
+        center_point (list[float], optional): [x, y] in comp space.
+            Defaults to comp center.
+    """
+    command = createCommand("addLightLayer", {
+        "compId": comp_id, "name": name, "centerPoint": center_point
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_layer_properties(comp_id: int, layer_index: int,
+                         name: Optional[str] = None,
+                         enabled: Optional[bool] = None,
+                         solo: Optional[bool] = None,
+                         locked: Optional[bool] = None,
+                         shy: Optional[bool] = None):
+    """
+    Updates layer switches in one call. Only provided arguments are
+    changed; omitted arguments are left untouched.
+
+    AE constraint (26.x): solo cannot coexist with a disabled layer.
+    solo=True is refused with a clean error unless the layer is enabled
+    (or enabled=True is passed in the same call).
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        name (str, optional): Rename the layer.
+        enabled (bool, optional): Video on/off (eyeball).
+        solo (bool, optional): Solo switch.
+        locked (bool, optional): Lock switch.
+        shy (bool, optional): Shy switch.
+    """
+    options = {"compId": comp_id, "layerIndex": layer_index}
+    if name is not None:
+        options["name"] = name
+    if enabled is not None:
+        options["enabled"] = enabled
+    if solo is not None:
+        options["solo"] = solo
+    if locked is not None:
+        options["locked"] = locked
+    if shy is not None:
+        options["shy"] = shy
+    command = createCommand("setLayerProperties", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def delete_layer(comp_id: int, layer_index: int):
+    """
+    Deletes a layer. Locked layers are refused - unlock first with
+    set_layer_properties. Remaining layer indices shift after deletion;
+    re-read get_composition_details.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+    """
+    command = createCommand("deleteLayer", {
+        "compId": comp_id, "layerIndex": layer_index
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def duplicate_layer(comp_id: int, layer_index: int,
+                    name: Optional[str] = None):
+    """
+    Duplicates a layer (copy lands directly above the original).
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based index of the layer to duplicate.
+        name (str, optional): Name for the duplicate.
+    """
+    command = createCommand("duplicateLayer", {
+        "compId": comp_id, "layerIndex": layer_index, "name": name
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def reorder_layer(comp_id: int, layer_index: int, position: str,
+                  target_index: Optional[int] = None):
+    """
+    Moves a layer in the stacking order. All layer indices shift after
+    reordering; re-read get_composition_details.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based index of the layer to move.
+        position (str): "before" or "after" (relative to target_index),
+            or "top" / "bottom" (target_index ignored).
+        target_index (int, optional): Required for "before"/"after".
+    """
+    command = createCommand("reorderLayer", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "position": position, "targetIndex": target_index
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_layer_times(comp_id: int, layer_index: int,
+                    start_time: Optional[float] = None,
+                    in_point: Optional[float] = None,
+                    out_point: Optional[float] = None):
+    """
+    Sets layer timing in seconds. Only provided arguments are changed.
+    startTime shifts the whole layer; in/out trim it.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        start_time (float, optional): Layer start time in comp seconds.
+        in_point (float, optional): Trim-in time in comp seconds.
+        out_point (float, optional): Trim-out time in comp seconds.
+    """
+    command = createCommand("setLayerTimes", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "startTime": start_time, "inPoint": in_point,
+        "outPoint": out_point
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_layer_transform(comp_id: int, layer_index: int,
+                        anchor_point: Optional[list[float]] = None,
+                        position: Optional[list[float]] = None,
+                        scale: Optional[list[float]] = None,
+                        rotation: Optional[float] = None,
+                        rotation_x: Optional[float] = None,
+                        rotation_y: Optional[float] = None,
+                        opacity: Optional[float] = None):
+    """
+    Sets static transform values. Only provided arguments are changed.
+    Properties that already have keyframes are skipped with an
+    explanation (use the Phase 2 keyframe tools for animated
+    properties). Response includes applied/skipped lists plus the
+    resulting transform state.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        anchor_point (list[float], optional): [x, y] or [x, y, z].
+        position (list[float], optional): [x, y] or [x, y, z].
+        scale (list[float], optional): [x, y] or [x, y, z] percent
+            (100 = original size).
+        rotation (float, optional): Z rotation in degrees.
+        rotation_x (float, optional): X rotation (3D layers only).
+        rotation_y (float, optional): Y rotation (3D layers only).
+        opacity (float, optional): 0-100.
+    """
+    options = {"compId": comp_id, "layerIndex": layer_index}
+    if anchor_point is not None:
+        options["anchorPoint"] = anchor_point
+    if position is not None:
+        options["position"] = position
+    if scale is not None:
+        options["scale"] = scale
+    if rotation is not None:
+        options["rotation"] = rotation
+    if rotation_x is not None:
+        options["rotationX"] = rotation_x
+    if rotation_y is not None:
+        options["rotationY"] = rotation_y
+    if opacity is not None:
+        options["opacity"] = opacity
+    command = createCommand("setLayerTransform", options)
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_layer_parent(comp_id: int, layer_index: int,
+                     parent_index: Optional[int] = None):
+    """
+    Parents a layer to another layer (the rigging primitive - parent to
+    nulls from add_null_layer). Omit parent_index to unparent.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based index of the child layer.
+        parent_index (int, optional): 1-based index of the parent layer.
+            Omit (or None) to remove the parent.
+    """
+    command = createCommand("setLayerParent", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "parentIndex": parent_index
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def precompose_layers(comp_id: int, layer_indices: list[int], name: str,
+                      move_all_attributes: bool = True):
+    """
+    Precomposes layers into a new nested composition. Returns the new
+    comp id and the index of the precomp layer left in the original
+    comp. Layer indices shift afterward; re-read
+    get_composition_details.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_indices (list[int]): 1-based indices of layers to
+            precompose.
+        name (str): Name for the new nested composition.
+        move_all_attributes (bool): Move all attributes into the new
+            comp. Must be True when precomposing multiple layers
+            (AE API constraint). Default True.
+    """
+    command = createCommand("precomposeLayers", {
+        "compId": comp_id, "layerIndices": layer_indices,
+        "name": name, "moveAllAttributes": move_all_attributes
     })
     return sendCommand(command)
