@@ -112,6 +112,22 @@ const AE_HELPERS = `
         if (t === KeyframeInterpolationType.HOLD) { return "HOLD"; }
         return String(t);
     }
+    function valueTypeToString(vt) {
+        if (vt === PropertyValueType.NO_VALUE) { return "NO_VALUE"; }
+        if (vt === PropertyValueType.ThreeD_SPATIAL) { return "ThreeD_SPATIAL"; }
+        if (vt === PropertyValueType.ThreeD) { return "ThreeD"; }
+        if (vt === PropertyValueType.TwoD_SPATIAL) { return "TwoD_SPATIAL"; }
+        if (vt === PropertyValueType.TwoD) { return "TwoD"; }
+        if (vt === PropertyValueType.OneD) { return "OneD"; }
+        if (vt === PropertyValueType.COLOR) { return "COLOR"; }
+        if (vt === PropertyValueType.CUSTOM_VALUE) { return "CUSTOM_VALUE"; }
+        if (vt === PropertyValueType.MARKER) { return "MARKER"; }
+        if (vt === PropertyValueType.LAYER_INDEX) { return "LAYER_INDEX"; }
+        if (vt === PropertyValueType.MASK_INDEX) { return "MASK_INDEX"; }
+        if (vt === PropertyValueType.SHAPE) { return "SHAPE"; }
+        if (vt === PropertyValueType.TEXT_DOCUMENT) { return "TEXT_DOCUMENT"; }
+        return String(vt);
+    }
 `;
 
 // Shared JS-side prologue: comp + layer + property resolution.
@@ -1745,6 +1761,365 @@ async function removeExpression(command) {
     return createPacket(await executeAECommand(script));
 }
 
+// Priority 6: Generic Effects Engine & Layer Switches
+// - Effects are addressed by (compId, layerIndex, effectIndex) where
+//   effectIndex is the 1-based index within the Effect Parade — indices
+//   SHIFT on remove_effect (re-read get_layer_effects after structural
+//   changes).
+// - set_effect_property refuses keyframed params; the P4 keyframe tools
+//   address effect params via propertyPath ["ADBE Effect Parade", ...].
+// - CUSTOM_VALUE / NO_VALUE params (curves, buttons) are listed with
+//   value: null — readable inventory, not writable through this tool.
+
+// Enumerate installed effects. Filters applied panel-side to keep the
+// payload sane (~400 effects unfiltered).
+async function listEffectMatchNames(command) {
+    const o = command.options || {};
+    const category = (o.category === undefined || o.category === null) ? "null" : JSON.stringify(o.category);
+    const search = (o.search === undefined || o.search === null) ? "null" : JSON.stringify(String(o.search).toLowerCase());
+    const script = `
+        (function() {
+            try {
+                var category = ${category};
+                var search = ${search};
+                var out = [];
+                var total = app.effects.length;
+                for (var i = 0; i < total; i++) {
+                    var e = app.effects[i];
+                    if (category !== null && e.category !== category) { continue; }
+                    if (search !== null) {
+                        var dn = String(e.displayName).toLowerCase();
+                        var mn = String(e.matchName).toLowerCase();
+                        if (dn.indexOf(search) === -1 && mn.indexOf(search) === -1) { continue; }
+                    }
+                    out.push({
+                        displayName: e.displayName,
+                        matchName: e.matchName,
+                        category: e.category
+                    });
+                }
+                return JSON.stringify({
+                    success: true,
+                    totalInstalled: total,
+                    matched: out.length,
+                    effects: out
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function addEffect(command) {
+    const o = command.options || {};
+    const effectName = (o.effectName === undefined || o.effectName === null) ? "null" : JSON.stringify(o.effectName);
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Effect");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var parade = layer.property("ADBE Effect Parade");
+                if (parade === null || parade === undefined) {
+                    return JSON.stringify({error: "Layer '" + layer.name + "' cannot hold effects (no Effect Parade)."});
+                }
+                var matchName = ${JSON.stringify(o.matchName)};
+                if (parade.canAddProperty(matchName) !== true) {
+                    return JSON.stringify({error: "Effect matchName not addable: '" + matchName + "'. Use list_effect_match_names to find valid matchNames."});
+                }
+                var fx = parade.addProperty(matchName);
+                var name = ${effectName};
+                if (name !== null) { fx.name = name; }
+                return JSON.stringify({
+                    success: true,
+                    effectIndex: fx.propertyIndex,
+                    matchName: fx.matchName,
+                    name: fx.name,
+                    numEffects: parade.numProperties
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// The round-trip read that makes "make it blurrier" possible: every
+// applied effect with every parameter's matchName, type, and value.
+async function getLayerEffects(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var parade = layer.property("ADBE Effect Parade");
+                var effects = [];
+                if (parade !== null && parade !== undefined) {
+                    for (var i = 1; i <= parade.numProperties; i++) {
+                        var fx = parade.property(i);
+                        var params = [];
+                        for (var j = 1; j <= fx.numProperties; j++) {
+                            var p = fx.property(j);
+                            var value = null;
+                            var vt = "UNKNOWN";
+                            if (p.propertyType !== PropertyType.PROPERTY) {
+                                // Nested group (e.g. Compositing Options): no
+                                // valueType/value - ExtendScript JSON.stringify
+                                // emits literal undefined for them, which
+                                // breaks JSON.parse panel-side.
+                                vt = "GROUP";
+                            } else {
+                                try { vt = valueTypeToString(p.propertyValueType); } catch (eVT) {}
+                                if (vt !== "NO_VALUE" && vt !== "CUSTOM_VALUE" && vt !== "MARKER") {
+                                    try { value = p.value; } catch (eVal) { value = null; }
+                                }
+                                if (value === undefined) { value = null; }
+                            }
+                            params.push({
+                                matchName: p.matchName,
+                                name: p.name,
+                                valueType: vt,
+                                value: value,
+                                numKeys: (p.numKeys !== undefined) ? p.numKeys : 0,
+                                hasExpression: (p.expression !== undefined && p.expression !== null && p.expression !== "")
+                            });
+                        }
+                        effects.push({
+                            effectIndex: i,
+                            matchName: fx.matchName,
+                            name: fx.name,
+                            enabled: fx.enabled,
+                            numParams: fx.numProperties,
+                            params: params
+                        });
+                    }
+                }
+                return JSON.stringify({
+                    success: true,
+                    layerName: layer.name,
+                    numEffects: effects.length,
+                    effects: effects
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function setEffectProperty(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Effect Property");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var parade = layer.property("ADBE Effect Parade");
+                if (parade === null || parade === undefined || parade.numProperties === 0) {
+                    return JSON.stringify({error: "Layer '" + layer.name + "' has no effects."});
+                }
+                var effectIndex = ${JSON.stringify(o.effectIndex)};
+                if (effectIndex < 1 || effectIndex > parade.numProperties) {
+                    return JSON.stringify({error: "Effect index out of range: " + effectIndex + " (layer has " + parade.numProperties + " effects)"});
+                }
+                var fx = parade.property(effectIndex);
+                var p = null;
+                try { p = fx.property(${JSON.stringify(o.paramMatchName)}); } catch (eP) { p = null; }
+                if (p === null || p === undefined) {
+                    return JSON.stringify({error: "Parameter not found on '" + fx.name + "': '" + ${JSON.stringify(o.paramMatchName)} + "'. Use get_layer_effects for valid param matchNames."});
+                }
+                if (p.numKeys !== undefined && p.numKeys > 0) {
+                    return JSON.stringify({error: "Parameter '" + p.name + "' has " + p.numKeys + " keyframes - use the keyframe tools (propertyPath: [\\"ADBE Effect Parade\\", \\"" + fx.matchName + "\\", \\"" + p.matchName + "\\"])"});
+                }
+                p.setValue(${JSON.stringify(o.value)});
+                return JSON.stringify({
+                    success: true,
+                    effectIndex: effectIndex,
+                    effectName: fx.name,
+                    param: p.matchName,
+                    value: p.value
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function removeEffect(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Remove Effect");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var parade = layer.property("ADBE Effect Parade");
+                if (parade === null || parade === undefined || parade.numProperties === 0) {
+                    return JSON.stringify({error: "Layer '" + layer.name + "' has no effects."});
+                }
+                var effectIndex = ${JSON.stringify(o.effectIndex)};
+                if (effectIndex < 1 || effectIndex > parade.numProperties) {
+                    return JSON.stringify({error: "Effect index out of range: " + effectIndex + " (layer has " + parade.numProperties + " effects)"});
+                }
+                var fx = parade.property(effectIndex);
+                var removedName = fx.name;
+                fx.remove();
+                return JSON.stringify({success: true, removedName: removedName, numEffects: parade.numProperties});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// Layer switch and/or comp master toggle in one call — motion blur only
+// renders when BOTH are on. Only provided args are touched.
+async function setMotionBlur(command) {
+    const o = command.options || {};
+    const layerIndex = (o.layerIndex === undefined || o.layerIndex === null) ? "null" : JSON.stringify(o.layerIndex);
+    const layerEnabled = (o.layerEnabled === undefined || o.layerEnabled === null) ? "null" : JSON.stringify(o.layerEnabled);
+    const compEnabled = (o.compEnabled === undefined || o.compEnabled === null) ? "null" : JSON.stringify(o.compEnabled);
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Motion Blur");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layerIndex = ${layerIndex};
+                var layerEnabled = ${layerEnabled};
+                var compEnabled = ${compEnabled};
+                if (layerEnabled !== null && layerIndex === null) {
+                    return JSON.stringify({error: "layerIndex is required when layerEnabled is provided."});
+                }
+                var layerState = null;
+                if (layerEnabled !== null) {
+                    var layer = findLayerByIndex(comp, layerIndex);
+                    if (layer === null) {
+                        return JSON.stringify({error: "Layer not found: index " + layerIndex + " (comp has " + comp.numLayers + " layers)"});
+                    }
+                    layer.motionBlur = layerEnabled;
+                    layerState = layer.motionBlur === true;
+                }
+                if (compEnabled !== null) {
+                    comp.motionBlur = compEnabled;
+                }
+                return JSON.stringify({
+                    success: true,
+                    compMotionBlur: comp.motionBlur === true,
+                    layerMotionBlur: layerState
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// blendType: "OFF" | "FRAME_MIX" | "PIXEL_MOTION" (layer), compEnabled
+// toggles the comp master. Frame blending renders when both are on.
+async function setFrameBlending(command) {
+    const o = command.options || {};
+    const layerIndex = (o.layerIndex === undefined || o.layerIndex === null) ? "null" : JSON.stringify(o.layerIndex);
+    const blendType = (o.blendType === undefined || o.blendType === null) ? "null" : JSON.stringify(o.blendType);
+    const compEnabled = (o.compEnabled === undefined || o.compEnabled === null) ? "null" : JSON.stringify(o.compEnabled);
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Frame Blending");
+            try {
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layerIndex = ${layerIndex};
+                var blendType = ${blendType};
+                var compEnabled = ${compEnabled};
+                if (blendType !== null && layerIndex === null) {
+                    return JSON.stringify({error: "layerIndex is required when blendType is provided."});
+                }
+                var layerState = null;
+                if (blendType !== null) {
+                    var layer = findLayerByIndex(comp, layerIndex);
+                    if (layer === null) {
+                        return JSON.stringify({error: "Layer not found: index " + layerIndex + " (comp has " + comp.numLayers + " layers)"});
+                    }
+                    var bt = null;
+                    if (blendType === "OFF") { bt = FrameBlendingType.NO_FRAME_BLEND; }
+                    else if (blendType === "FRAME_MIX") { bt = FrameBlendingType.FRAME_MIX; }
+                    else if (blendType === "PIXEL_MOTION") { bt = FrameBlendingType.PIXEL_MOTION; }
+                    else {
+                        return JSON.stringify({error: "blendType must be OFF, FRAME_MIX, or PIXEL_MOTION - got '" + blendType + "'"});
+                    }
+                    layer.frameBlendingType = bt;
+                    layerState = blendType;
+                }
+                if (compEnabled !== null) {
+                    comp.frameBlending = compEnabled;
+                }
+                return JSON.stringify({
+                    success: true,
+                    compFrameBlending: comp.frameBlending === true,
+                    layerFrameBlending: layerState
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
 const createPacket = (result) => {
     return {
         content: [{
@@ -1812,5 +2187,12 @@ const commandHandlers = {
     setExpression,
     getExpression,
     removeExpression,
+    listEffectMatchNames,
+    addEffect,
+    getLayerEffects,
+    setEffectProperty,
+    removeEffect,
+    setMotionBlur,
+    setFrameBlending,
     getCompositions: async (command) => createPacket(await getCompositions())
 };

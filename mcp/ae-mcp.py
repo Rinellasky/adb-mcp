@@ -1370,3 +1370,163 @@ def apply_expression_preset(comp_id: int, layer_index: int,
         "propertyPath": property_path, "expression": expression
     })
     return sendCommand(command)
+
+
+
+@mcp.tool()
+def list_effect_match_names(category: Optional[str] = None,
+                            search: Optional[str] = None):
+    """
+    Enumerates installed effects ({displayName, matchName, category}).
+    ~400 built-ins unfiltered - prefer filtering. matchNames from here
+    feed add_effect.
+
+    Args:
+        category (str, optional): Exact category filter (e.g.
+            "Blur & Sharpen", "Color Correction", "Stylize").
+        search (str, optional): Case-insensitive substring match against
+            displayName or matchName (e.g. "blur", "glow").
+    """
+    command = createCommand("listEffectMatchNames", {
+        "category": category, "search": search
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_effect(comp_id: int, layer_index: int, match_name: str,
+               effect_name: Optional[str] = None):
+    """
+    Applies an effect to a layer by matchName (from
+    list_effect_match_names, e.g. "ADBE Gaussian Blur 2", "ADBE Fill",
+    "ADBE Glo2"). Returns the 1-based effect_index used by
+    set_effect_property / remove_effect.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        match_name (str): Effect matchName.
+        effect_name (str, optional): Custom display name for this
+            instance.
+    """
+    command = createCommand("addEffect", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "matchName": match_name, "effectName": effect_name
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_layer_effects(comp_id: int, layer_index: int):
+    """
+    Reads all effects applied to a layer with every parameter's
+    matchName, display name, value type, current value, keyframe count,
+    and expression flag - the round-trip that makes "make it blurrier"
+    possible. CUSTOM_VALUE/NO_VALUE params (curves, buttons) list with
+    value=null.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+    """
+    command = createCommand("getLayerEffects", {
+        "compId": comp_id, "layerIndex": layer_index
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_effect_property(comp_id: int, layer_index: int, effect_index: int,
+                        param_match_name: str, value):
+    """
+    Sets a parameter on an applied effect. Keyframed parameters are
+    refused with a pointer to the keyframe tools (which address effect
+    params via propertyPath ["ADBE Effect Parade", "<effect>",
+    "<param>"]).
+
+    Value shapes: sliders take numbers; colors take [r, g, b] 0.0-1.0;
+    points take [x, y]; checkboxes take true/false (or 1/0); dropdowns
+    take the 1-based option index; layer-select params take a 1-based
+    layer index.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        effect_index (int): 1-based effect index (from add_effect /
+            get_layer_effects).
+        param_match_name (str): Parameter matchName (from
+            get_layer_effects).
+        value: The new value (see shapes above).
+    """
+    command = createCommand("setEffectProperty", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "effectIndex": effect_index,
+        "paramMatchName": param_match_name, "value": value
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def remove_effect(comp_id: int, layer_index: int, effect_index: int):
+    """
+    Removes an applied effect. Remaining effect indices SHIFT - re-read
+    get_layer_effects before further effect_index-based calls.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        effect_index (int): 1-based effect index.
+    """
+    command = createCommand("removeEffect", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "effectIndex": effect_index
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_motion_blur(comp_id: int, layer_index: Optional[int] = None,
+                    layer_enabled: Optional[bool] = None,
+                    comp_enabled: Optional[bool] = None):
+    """
+    Sets motion blur switches. Motion blur only RENDERS when both the
+    layer switch and the comp master are on - this tool can set either
+    or both in one call. Only provided args are touched.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int, optional): 1-based layer index (required with
+            layer_enabled).
+        layer_enabled (bool, optional): Layer motion blur switch.
+        comp_enabled (bool, optional): Comp master motion blur toggle.
+    """
+    command = createCommand("setMotionBlur", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "layerEnabled": layer_enabled, "compEnabled": comp_enabled
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_frame_blending(comp_id: int, layer_index: Optional[int] = None,
+                       blend_type: Optional[str] = None,
+                       comp_enabled: Optional[bool] = None):
+    """
+    Sets frame blending. The layer setting is a three-state type; the
+    comp master must also be on for blending to render. Only provided
+    args are touched.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int, optional): 1-based layer index (required with
+            blend_type).
+        blend_type (str, optional): "OFF", "FRAME_MIX" (fast
+            crossfade), or "PIXEL_MOTION" (optical-flow interpolation).
+        comp_enabled (bool, optional): Comp master frame blending
+            toggle.
+    """
+    command = createCommand("setFrameBlending", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "blendType": blend_type, "compEnabled": comp_enabled
+    })
+    return sendCommand(command)
