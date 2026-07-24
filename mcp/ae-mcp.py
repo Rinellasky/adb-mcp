@@ -914,3 +914,200 @@ def precompose_layers(comp_id: int, layer_indices: list[int], name: str,
         "name": name, "moveAllAttributes": move_all_attributes
     })
     return sendCommand(command)
+
+
+# ---------------------------------------------------------------------------
+# Priority 4: Keyframe Engine
+# Property addressing: property_path is a list of matchName strings walked
+# from the layer, e.g. ["ADBE Transform Group", "ADBE Position"] or
+# ["ADBE Effect Parade", "ADBE Gaussian Blur 2", "ADBE Gaussian Blur 2-0001"].
+# A segment that is all digits (e.g. "2") is treated as a 1-based numeric
+# property index - useful for duplicate effects. Discover matchNames via
+# get_composition_details (effects) and standard transform matchNames.
+
+
+@mcp.tool()
+def add_keyframe(comp_id: int, layer_index: int, property_path: list[str],
+                 time_seconds: float, value):
+    """
+    Adds (or overwrites) a keyframe on any keyframeable property at the
+    given time. Returns the resulting key index.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer, e.g.
+            ["ADBE Transform Group", "ADBE Position"]. All-digit segments
+            are 1-based numeric indices (for duplicate effects).
+        time_seconds (float): Keyframe time in seconds.
+        value: The value - scalar (opacity/rotation), [x, y] or
+            [x, y, z] (position/scale/anchor), [r, g, b] (color), etc.
+            Must match the property's dimensionality.
+    """
+    command = createCommand("addKeyframe", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path,
+        "timeSeconds": time_seconds, "value": value
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def add_keyframes(comp_id: int, layer_index: int, property_path: list[str],
+                  times: list[float], values: list):
+    """
+    Batch-adds keyframes in ONE call and ONE undo step - always prefer
+    this over repeated add_keyframe calls. times and values must be
+    equal-length; values[i] lands at times[i].
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer, e.g.
+            ["ADBE Transform Group", "ADBE Position"]. All-digit segments
+            are 1-based numeric indices (for duplicate effects).
+        times (list[float]): Keyframe times in seconds.
+        values (list): One value per time, each matching the property's
+            dimensionality.
+    """
+    command = createCommand("addKeyframes", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path,
+        "times": times, "values": values
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def remove_keyframes(comp_id: int, layer_index: int,
+                     property_path: list[str],
+                     key_indices: Optional[list[int]] = None):
+    """
+    Removes keyframes from a property. Omit key_indices to remove ALL
+    keyframes. One undo step.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer.
+        key_indices (list[int], optional): 1-based key indices to remove
+            (from get_keyframes). Omit to clear every keyframe.
+    """
+    command = createCommand("removeKeyframes", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path,
+        "keyIndices": key_indices
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_keyframes(comp_id: int, layer_index: int, property_path: list[str]):
+    """
+    Reads all keyframes on a property: per key - 1-based keyIndex, time,
+    value, in/out interpolation (LINEAR/BEZIER/HOLD), and temporal ease
+    (speed/influence per dimension). Also reports whether an expression
+    is present.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer.
+    """
+    command = createCommand("getKeyframes", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_property_value(comp_id: int, layer_index: int,
+                       property_path: list[str],
+                       time_seconds: Optional[float] = None,
+                       pre_expression: bool = False):
+    """
+    Reads a property's value - current value if time_seconds is omitted,
+    or the evaluated value at any time (including between keyframes and
+    with expressions applied).
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer.
+        time_seconds (float, optional): Evaluate at this time. Omit for
+            the current value.
+        pre_expression (bool): If True, return the pre-expression
+            (keyframed) value instead of the post-expression result.
+            Default False.
+    """
+    command = createCommand("getPropertyValue", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path,
+        "timeSeconds": time_seconds,
+        "preExpression": pre_expression
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_keyframe_interpolation(comp_id: int, layer_index: int,
+                               property_path: list[str], in_type: str,
+                               out_type: Optional[str] = None,
+                               key_indices: Optional[list[int]] = None):
+    """
+    Sets keyframe interpolation type. Omit key_indices to apply to ALL
+    keys; omit out_type to use in_type for both sides.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer.
+        in_type (str): "LINEAR", "BEZIER", or "HOLD".
+        out_type (str, optional): Same options; defaults to in_type.
+        key_indices (list[int], optional): 1-based key indices. Omit for
+            all keys.
+    """
+    command = createCommand("setKeyframeInterpolation", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path,
+        "inType": in_type, "outType": out_type,
+        "keyIndices": key_indices
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_keyframe_ease(comp_id: int, layer_index: int,
+                      property_path: list[str],
+                      easy_ease: bool = False,
+                      in_speed: float = 0.0, in_influence: float = 33.3333,
+                      out_speed: float = 0.0, out_influence: float = 33.3333,
+                      key_indices: Optional[list[int]] = None):
+    """
+    Sets temporal ease on keyframes (forces BEZIER interpolation, like
+    F9). easy_ease=True is the classic Easy Ease shorthand (speed 0,
+    influence 33.33 both sides) and overrides the explicit values.
+    Omit key_indices to apply to ALL keys.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer.
+        easy_ease (bool): Apply standard Easy Ease. Default False.
+        in_speed (float): Incoming speed (0 = full stop at the key).
+        in_influence (float): Incoming influence 0.1-100.
+        out_speed (float): Outgoing speed.
+        out_influence (float): Outgoing influence 0.1-100.
+        key_indices (list[int], optional): 1-based key indices. Omit for
+            all keys.
+    """
+    command = createCommand("setKeyframeEase", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path,
+        "easyEase": easy_ease,
+        "inSpeed": in_speed, "inInfluence": in_influence,
+        "outSpeed": out_speed, "outInfluence": out_influence,
+        "keyIndices": key_indices
+    })
+    return sendCommand(command)

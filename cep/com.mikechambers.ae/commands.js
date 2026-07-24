@@ -63,7 +63,77 @@ const AE_HELPERS = `
                 ? item.parentFolder.id : null
         };
     }
+    function resolvePropertyPath(layer, path) {
+        var node = layer;
+        for (var _p = 0; _p < path.length; _p++) {
+            var seg = path[_p];
+            var next = null;
+            if (/^[0-9]+$/.test(String(seg))) {
+                var idx = parseInt(String(seg), 10);
+                if (node.numProperties !== undefined && idx >= 1 && idx <= node.numProperties) {
+                    next = node.property(idx);
+                }
+            } else {
+                try { next = node.property(seg); } catch (eSeg) { next = null; }
+            }
+            if (next === null || next === undefined) {
+                return { error: "Property path failed at segment " + (_p + 1) + " ('" + seg + "')" +
+                    ((node.matchName !== undefined) ? " under '" + node.matchName + "'" : "") };
+            }
+            node = next;
+        }
+        if (node.setValueAtTime === undefined && node.numKeys === undefined) {
+            return { error: "Path resolved to a property GROUP ('" + node.matchName + "'), not a keyframeable property. Add the leaf property matchName." };
+        }
+        return { prop: node };
+    }
+    function easeCountFor(prop) {
+        var vt = prop.propertyValueType;
+        if (vt === PropertyValueType.TwoD_SPATIAL || vt === PropertyValueType.ThreeD_SPATIAL) { return 1; }
+        if (vt === PropertyValueType.TwoD) { return 2; }
+        if (vt === PropertyValueType.ThreeD) { return 3; }
+        return 1;
+    }
+    function buildEaseArray(prop, speed, influence) {
+        var n = easeCountFor(prop);
+        var arr = [];
+        for (var _e = 0; _e < n; _e++) { arr.push(new KeyframeEase(speed, influence)); }
+        return arr;
+    }
+    function interpTypeFromString(s) {
+        if (s === "LINEAR") { return KeyframeInterpolationType.LINEAR; }
+        if (s === "BEZIER") { return KeyframeInterpolationType.BEZIER; }
+        if (s === "HOLD") { return KeyframeInterpolationType.HOLD; }
+        return null;
+    }
+    function interpTypeToString(t) {
+        if (t === KeyframeInterpolationType.LINEAR) { return "LINEAR"; }
+        if (t === KeyframeInterpolationType.BEZIER) { return "BEZIER"; }
+        if (t === KeyframeInterpolationType.HOLD) { return "HOLD"; }
+        return String(t);
+    }
 `;
+
+// Shared JS-side prologue: comp + layer + property resolution.
+// Emits ES3 that leaves `comp`, `layer`, and `prop` in scope or returns
+// an error JSON early.
+function resolvePrologue(o) {
+    return `
+                var comp = findCompById(${JSON.stringify(o.compId)});
+                if (comp === null) {
+                    return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
+                }
+                var layer = findLayerByIndex(comp, ${JSON.stringify(o.layerIndex)});
+                if (layer === null) {
+                    return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
+                }
+                var resolved = resolvePropertyPath(layer, ${JSON.stringify(o.propertyPath || [])});
+                if (resolved.error !== undefined) {
+                    return JSON.stringify({error: resolved.error});
+                }
+                var prop = resolved.prop;
+    `;
+}
 
 // Get project information (lightweight - used by main.js for the response envelope)
 async function getProjectInfo() {
@@ -1297,6 +1367,269 @@ async function precomposeLayers(command) {
     return createPacket(await executeAECommand(script));
 }
 
+// -------------------------------------------------------------------
+// Priority 4: Keyframe Engine
+// - Property addressing: propertyPath is an array of matchName strings
+//   walked from the layer, e.g. ["ADBE Transform Group", "ADBE Position"].
+//   A segment that is all digits is a 1-based numeric property index
+//   (for duplicate effects: ["ADBE Effect Parade", "2", "..."]).
+// - Key indices are AE's native 1-based key indices.
+// - Temporal ease array length must match the property's dimensionality
+//   (1 for 1D and spatial props, N for non-spatial multi-D) —
+//   buildEaseArray fans one speed/influence pair out.
+
+async function addKeyframe(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Keyframe");
+            try {
+                ${resolvePrologue(o)}
+                prop.setValueAtTime(${JSON.stringify(o.timeSeconds)}, ${JSON.stringify(o.value)});
+                var k = prop.nearestKeyIndex(${JSON.stringify(o.timeSeconds)});
+                return JSON.stringify({
+                    success: true,
+                    keyIndex: k,
+                    time: prop.keyTime(k),
+                    numKeys: prop.numKeys
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// Batch — one undo group for N keys. times and values must be equal length.
+async function addKeyframes(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Add Keyframes");
+            try {
+                ${resolvePrologue(o)}
+                var times = ${JSON.stringify(o.times || [])};
+                var values = ${JSON.stringify(o.values || [])};
+                if (times.length === 0 || times.length !== values.length) {
+                    return JSON.stringify({error: "times and values must be non-empty arrays of equal length (got " + times.length + " / " + values.length + ")"});
+                }
+                prop.setValuesAtTimes(times, values);
+                return JSON.stringify({
+                    success: true,
+                    keysSet: times.length,
+                    numKeys: prop.numKeys
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// keyIndices omitted/empty = remove ALL keys. Iterates descending.
+async function removeKeyframes(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Remove Keyframes");
+            try {
+                ${resolvePrologue(o)}
+                var indices = ${JSON.stringify(o.keyIndices || [])};
+                var removed = 0;
+                if (indices.length === 0) {
+                    for (var i = prop.numKeys; i >= 1; i--) {
+                        prop.removeKey(i);
+                        removed++;
+                    }
+                } else {
+                    indices.sort(function(a, b) { return b - a; });
+                    for (var j = 0; j < indices.length; j++) {
+                        if (indices[j] < 1 || indices[j] > prop.numKeys) {
+                            return JSON.stringify({error: "Key index out of range: " + indices[j] + " (property has " + prop.numKeys + " keys); removed " + removed + " before failing"});
+                        }
+                        prop.removeKey(indices[j]);
+                        removed++;
+                    }
+                }
+                return JSON.stringify({success: true, removed: removed, numKeys: prop.numKeys});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function getKeyframes(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            try {
+                ${resolvePrologue(o)}
+                var keys = [];
+                for (var i = 1; i <= prop.numKeys; i++) {
+                    var easeIn = [];
+                    var easeOut = [];
+                    try {
+                        var tin = prop.keyInTemporalEase(i);
+                        var tout = prop.keyOutTemporalEase(i);
+                        for (var a = 0; a < tin.length; a++) { easeIn.push({speed: tin[a].speed, influence: tin[a].influence}); }
+                        for (var b = 0; b < tout.length; b++) { easeOut.push({speed: tout[b].speed, influence: tout[b].influence}); }
+                    } catch (eEase) { /* non-temporal-easable property */ }
+                    keys.push({
+                        keyIndex: i,
+                        time: prop.keyTime(i),
+                        value: prop.keyValue(i),
+                        inInterpolation: interpTypeToString(prop.keyInInterpolationType(i)),
+                        outInterpolation: interpTypeToString(prop.keyOutInterpolationType(i)),
+                        easeIn: easeIn,
+                        easeOut: easeOut
+                    });
+                }
+                return JSON.stringify({
+                    success: true,
+                    matchName: prop.matchName,
+                    name: prop.name,
+                    numKeys: prop.numKeys,
+                    hasExpression: (prop.expression !== undefined && prop.expression !== null && prop.expression !== ""),
+                    keys: keys
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function getPropertyValue(command) {
+    const o = command.options || {};
+    const timeSeconds = (o.timeSeconds === undefined || o.timeSeconds === null) ? "null" : JSON.stringify(o.timeSeconds);
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            try {
+                ${resolvePrologue(o)}
+                var t = ${timeSeconds};
+                var value = (t !== null)
+                    ? prop.valueAtTime(t, ${JSON.stringify(o.preExpression === true)})
+                    : prop.value;
+                return JSON.stringify({
+                    success: true,
+                    matchName: prop.matchName,
+                    name: prop.name,
+                    time: t,
+                    value: value,
+                    numKeys: prop.numKeys,
+                    hasExpression: (prop.expression !== undefined && prop.expression !== null && prop.expression !== "")
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// keyIndices omitted/empty = apply to ALL keys.
+// inType/outType: "LINEAR" | "BEZIER" | "HOLD". outType omitted = inType.
+async function setKeyframeInterpolation(command) {
+    const o = command.options || {};
+    const outType = (o.outType === undefined || o.outType === null) ? "null" : JSON.stringify(o.outType);
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Keyframe Interpolation");
+            try {
+                ${resolvePrologue(o)}
+                var inT = interpTypeFromString(${JSON.stringify(o.inType)});
+                if (inT === null) {
+                    return JSON.stringify({error: "inType must be LINEAR, BEZIER, or HOLD - got '" + ${JSON.stringify(o.inType)} + "'"});
+                }
+                var outStr = ${outType};
+                var outT = (outStr !== null) ? interpTypeFromString(outStr) : inT;
+                if (outT === null) {
+                    return JSON.stringify({error: "outType must be LINEAR, BEZIER, or HOLD - got '" + outStr + "'"});
+                }
+                var indices = ${JSON.stringify(o.keyIndices || [])};
+                if (indices.length === 0) {
+                    for (var i = 1; i <= prop.numKeys; i++) { indices.push(i); }
+                }
+                for (var j = 0; j < indices.length; j++) {
+                    if (indices[j] < 1 || indices[j] > prop.numKeys) {
+                        return JSON.stringify({error: "Key index out of range: " + indices[j] + " (property has " + prop.numKeys + " keys)"});
+                    }
+                    prop.setInterpolationTypeAtKey(indices[j], inT, outT);
+                }
+                return JSON.stringify({success: true, applied: indices.length, numKeys: prop.numKeys});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+// easy_ease shorthand: speed 0 / influence 33.3333 both sides (and
+// forces BEZIER interpolation, matching F9 behavior).
+// keyIndices omitted/empty = apply to ALL keys.
+async function setKeyframeEase(command) {
+    const o = command.options || {};
+    const easyEase = o.easyEase === true;
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Keyframe Ease");
+            try {
+                ${resolvePrologue(o)}
+                var easy = ${JSON.stringify(easyEase)};
+                var inSpeed = easy ? 0 : ${JSON.stringify(o.inSpeed === undefined ? 0 : o.inSpeed)};
+                var inInfluence = easy ? 33.3333 : ${JSON.stringify(o.inInfluence === undefined ? 33.3333 : o.inInfluence)};
+                var outSpeed = easy ? 0 : ${JSON.stringify(o.outSpeed === undefined ? 0 : o.outSpeed)};
+                var outInfluence = easy ? 33.3333 : ${JSON.stringify(o.outInfluence === undefined ? 33.3333 : o.outInfluence)};
+                if (inInfluence < 0.1 || inInfluence > 100 || outInfluence < 0.1 || outInfluence > 100) {
+                    return JSON.stringify({error: "influence must be between 0.1 and 100"});
+                }
+                var indices = ${JSON.stringify(o.keyIndices || [])};
+                if (indices.length === 0) {
+                    for (var i = 1; i <= prop.numKeys; i++) { indices.push(i); }
+                }
+                for (var j = 0; j < indices.length; j++) {
+                    var k = indices[j];
+                    if (k < 1 || k > prop.numKeys) {
+                        return JSON.stringify({error: "Key index out of range: " + k + " (property has " + prop.numKeys + " keys)"});
+                    }
+                    prop.setTemporalEaseAtKey(k,
+                        buildEaseArray(prop, inSpeed, inInfluence),
+                        buildEaseArray(prop, outSpeed, outInfluence));
+                    prop.setInterpolationTypeAtKey(k,
+                        KeyframeInterpolationType.BEZIER, KeyframeInterpolationType.BEZIER);
+                }
+                return JSON.stringify({success: true, applied: indices.length, numKeys: prop.numKeys});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
 const createPacket = (result) => {
     return {
         content: [{
@@ -1354,5 +1687,12 @@ const commandHandlers = {
     setLayerTransform,
     setLayerParent,
     precomposeLayers,
+    addKeyframe,
+    addKeyframes,
+    removeKeyframes,
+    getKeyframes,
+    getPropertyValue,
+    setKeyframeInterpolation,
+    setKeyframeEase,
     getCompositions: async (command) => createPacket(await getCompositions())
 };
