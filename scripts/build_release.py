@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -70,18 +71,25 @@ def _add_file(zf: zipfile.ZipFile, src: Path, arcname: str) -> None:
     print(f"    + {arcname}")
 
 
-def build_dxt(app: str) -> Path:
-    """Zip dxt/<app>/manifest.json + the MCP server .py files into a .dxt."""
+def build_dxt(app: str, version: str | None = None) -> Path:
+    """Zip dxt/<app>/manifest.json + the MCP server .py files into a .dxt.
+
+    If `version` looks like semver (X.Y.Z...), it is stamped into the
+    manifest inside the archive so Claude Desktop shows the release version.
+    """
     cfg = APPS[app]
     src_dir = REPO / "dxt" / cfg["dxt_dir"]
     mcp_dir = REPO / "mcp"
     out = DIST / cfg["dxt_out"]
 
     manifest = json.loads((src_dir / "manifest.json").read_text(encoding="utf-8"))
+    if version and re.fullmatch(r"\d+\.\d+\.\d+(?:[-.+].*)?", version):
+        manifest["version"] = version
     print(f"Building {out.name} (manifest version {manifest['version']})...")
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
-        _add_file(zf, src_dir / "manifest.json", "manifest.json")
+        zf.writestr("manifest.json", json.dumps(manifest, indent=2) + "\n")
+        print("    + manifest.json")
         for name in COMMON_PY_FILES + [cfg["server"]]:
             src = mcp_dir / name
             if not src.exists():
@@ -130,7 +138,7 @@ def main() -> int:
     print(f"=== Building adb-mcp release artifacts (v{version}): {', '.join(apps)} ===\n")
     artifacts = []
     for app in apps:
-        artifacts.append(build_dxt(app))
+        artifacts.append(build_dxt(app, version))
         print()
         artifacts.append(build_ccx(app))
         print()

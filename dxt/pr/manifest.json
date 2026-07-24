@@ -1,52 +1,52 @@
 {
-    "dxt_version":  "0.1",
-    "name":  "adb-mcp-premiere",
-    "display_name":  "Adobe Premiere Pro MCP",
-    "version":  "1.2.0",
-    "description":  "AI Agent for Adobe Premiere Pro (Beta): 110 tools (project/media management, sequence assembly & three-point editing, transitions, effects & Lumetri color, keyframes, markers, audio mixing, transcripts/captions, frame export with visual feedback, encoder rendering) exposed to LLMs via the MCP protocol.",
-    "long_description":  "Fork of Mike Chambers' adb-mcp, extended to 110 Premiere Pro tools across project & media management, sequence creation and three-point editing, timeline assembly, video/audio transitions, effects and Lumetri color grading, keyframes, markers, audio mixing and fades, speech-to-text transcripts and captions, frame export the AI can see (visual feedback loop), and encoder-based rendering. Exposes Adobe Premiere Pro (Beta) to any MCP-capable AI client (e.g. Claude Desktop). Note: Premiere Beta 26.5 introduced breaking UXP API changes affecting timeline-write tools; see the repo FINDINGS doc.",
-    "author":  {
-                   "name":  "Rinellasky",
-                   "url":  "https://github.com/Rinellasky"
-               },
-    "homepage":  "https://github.com/Rinellasky/adb-mcp",
-    "documentation":  "https://github.com/Rinellasky/adb-mcp",
-    "support":  "https://github.com/Rinellasky/adb-mcp/issues",
-    "server":  {
-                   "type":  "python",
-                   "entry_point":  "main.py",
-                   "mcp_config":  {
-                                      "command":  "uv",
-                                      "args":  [
-                                                   "run",
-                                                   "--with",
-                                                   "fonttools",
-                                                   "--with",
-                                                   "mcp",
-                                                   "--with",
-                                                   "mcp[cli]",
-                                                   "--with",
-                                                   "python-socketio",
-                                                   "--with",
-                                                   "requests",
-                                                   "--with",
-                                                   "websocket-client",
-                                                   "--with",
-                                                   "pillow",
-                                                   "mcp",
-                                                   "run",
-                                                   "${__dirname}/pr-mcp.py"
-                                               ]
-                                  }
-               },
-    "keywords":  [
-                     "adobe",
-                     "photoshop",
-                     "images"
-                 ],
-    "license":  "MIT",
-    "repository":  {
-                       "type":  "git",
-                       "url":  "https://github.com/mikechambers/adb-mcp"
-                   }
+  "dxt_version": "0.1",
+  "name": "adb-mcp-premiere",
+  "display_name": "Adobe Premiere Pro MCP",
+  "version": "1.2.0",
+  "description": "AI Agent for Adobe Premiere Pro (Beta): 110 tools (project/media management, sequence assembly & three-point editing, transitions, effects & Lumetri color, keyframes, markers, audio mixing, transcripts/captions, frame export with visual feedback, encoder rendering) exposed to LLMs via the MCP protocol.",
+  "long_description": "Fork of Mike Chambers' adb-mcp, extended to 110 Premiere Pro tools across project & media management, sequence creation and three-point editing, timeline assembly, video/audio transitions, effects and Lumetri color grading, keyframes, markers, audio mixing and fades, speech-to-text transcripts and captions, frame export the AI can see (visual feedback loop), and encoder-based rendering. Exposes Adobe Premiere Pro (Beta) to any MCP-capable AI client (e.g. Claude Desktop). Note: Premiere Beta 26.5 introduced breaking UXP API changes affecting timeline-write tools; see the repo FINDINGS doc.",
+  "author": {
+    "name": "Rinellasky",
+    "url": "https://github.com/Rinellasky"
+  },
+  "homepage": "https://github.com/Rinellasky/premiere-pro-mcp",
+  "documentation": "https://github.com/Rinellasky/premiere-pro-mcp#readme",
+  "support": "https://github.com/Rinellasky/premiere-pro-mcp/issues",
+  "server": {
+    "type": "python",
+    "entry_point": "main.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with",
+        "fonttools",
+        "--with",
+        "mcp",
+        "--with",
+        "mcp[cli]",
+        "--with",
+        "python-socketio",
+        "--with",
+        "requests",
+        "--with",
+        "websocket-client",
+        "--with",
+        "pillow",
+        "mcp",
+        "run",
+        "${__dirname}/pr-mcp.py"
+      ]
+    }
+  },
+  "keywords": [
+    "adobe",
+    "photoshop",
+    "images"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rinellasky/premiere-pro-mcp"
+  }
 }

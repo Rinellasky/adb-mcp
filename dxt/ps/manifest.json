@@ -9,9 +9,9 @@
     "name": "Rinellasky",
     "url": "https://github.com/Rinellasky"
   },
-  "homepage": "https://github.com/Rinellasky/adb-mcp",
-  "documentation": "https://github.com/Rinellasky/adb-mcp",
-  "support": "https://github.com/Rinellasky/adb-mcp/issues",
+  "homepage": "https://github.com/Rinellasky/photoshop-mcp",
+  "documentation": "https://github.com/Rinellasky/photoshop-mcp#readme",
+  "support": "https://github.com/Rinellasky/photoshop-mcp/issues",
   "server": {
     "type": "python",
     "entry_point": "main.py",
@@ -36,11 +36,9 @@
         "mcp",
         "run",
         "${__dirname}/ps-mcp.py"
-      ]     
+      ]
     }
   },
-
-
   "keywords": [
     "adobe",
     "photoshop",
@@ -51,6 +49,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Rinellasky/adb-mcp"
+    "url": "https://github.com/Rinellasky/photoshop-mcp"
   }
 }

@@ -1,12 +1,32 @@
 name: Release
 
-# Push a semver tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`) to build
-# all one-click-install artifacts and publish a GitHub Release with them attached.
-# `workflow_dispatch` runs the same build for testing but does NOT publish a release.
+# Per-product release + public mirror.
+#
+#   git tag premiere-v1.3.0 && git push origin premiere-v1.3.0
+#
+# builds ONLY that product's artifacts (+ proxy executables), publishes an
+# archival release here (private repo), then mirrors the release to the
+# product's PUBLIC repo (tag v1.3.0) using the RELEASES_PAT secret — a
+# fine-grained PAT with Contents: Read/Write on the public repos.
+#
+# Products: photoshop -> Rinellasky/photoshop-mcp
+#           indesign  -> Rinellasky/indesign-mcp
+#           premiere  -> Rinellasky/premiere-pro-mcp
+#
+# Release notes for the public release are taken from
+# release-notes/<product>-v<version>.md if that file exists, else a default
+# template is used.
+#
+# Legacy `v*` tags still build ALL products and publish a private release
+# only (no public mirror). `workflow_dispatch` builds everything for testing
+# and publishes nothing.
 
 on:
   push:
     tags:
+      - "photoshop-v*"
+      - "indesign-v*"
+      - "premiere-v*"
       - "v*"
   workflow_dispatch:
 
@@ -30,17 +50,50 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Resolve version
+      - name: Resolve product and version
         id: ver
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            case "${GITHUB_REF_NAME}" in
+              photoshop-v*)
+                echo "product=photoshop" >> "$GITHUB_OUTPUT"
+                echo "display=Photoshop MCP" >> "$GITHUB_OUTPUT"
+                echo "public_repo=Rinellasky/photoshop-mcp" >> "$GITHUB_OUTPUT"
+                echo "version=${GITHUB_REF_NAME#photoshop-v}" >> "$GITHUB_OUTPUT"
+                ;;
+              indesign-v*)
+                echo "product=indesign" >> "$GITHUB_OUTPUT"
+                echo "display=InDesign MCP" >> "$GITHUB_OUTPUT"
+                echo "public_repo=Rinellasky/indesign-mcp" >> "$GITHUB_OUTPUT"
+                echo "version=${GITHUB_REF_NAME#indesign-v}" >> "$GITHUB_OUTPUT"
+                ;;
+              premiere-v*)
+                echo "product=premiere" >> "$GITHUB_OUTPUT"
+                echo "display=Premiere Pro MCP" >> "$GITHUB_OUTPUT"
+                echo "public_repo=Rinellasky/premiere-pro-mcp" >> "$GITHUB_OUTPUT"
+                echo "version=${GITHUB_REF_NAME#premiere-v}" >> "$GITHUB_OUTPUT"
+                ;;
+              v*)
+                echo "product=all" >> "$GITHUB_OUTPUT"
+                echo "display=adb-mcp" >> "$GITHUB_OUTPUT"
+                echo "public_repo=" >> "$GITHUB_OUTPUT"
+                echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+                ;;
+            esac
           else
+            echo "product=all" >> "$GITHUB_OUTPUT"
+            echo "display=adb-mcp" >> "$GITHUB_OUTPUT"
+            echo "public_repo=" >> "$GITHUB_OUTPUT"
             echo "version=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build .dxt and .ccx
-        run: python scripts/build_release.py "${{ steps.ver.outputs.version }}"
+        run: |
+          if [ "${{ steps.ver.outputs.product }}" = "all" ]; then
+            python scripts/build_release.py "${{ steps.ver.outputs.version }}"
+          else
+            python scripts/build_release.py "${{ steps.ver.outputs.version }}" "${{ steps.ver.outputs.product }}"
+          fi
 
       - name: Build proxy executables (win + macOS)
         working-directory: adb-proxy-socket
@@ -58,20 +111,61 @@ jobs:
           name: adb-mcp-artifacts
           path: dist/*
 
-      - name: Publish GitHub Release
+      - name: Publish private (archival) release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          name: adb-mcp ${{ github.ref_name }}
+          name: ${{ steps.ver.outputs.display }} v${{ steps.ver.outputs.version }}
           generate_release_notes: true
           fail_on_unmatched_files: true
-          files: |
-            dist/photoshop-mcp.dxt
-            dist/photoshop-mcp-plugin.ccx
-            dist/indesign-mcp.dxt
-            dist/indesign-mcp-plugin.ccx
-            dist/premiere-mcp.dxt
-            dist/premiere-mcp-plugin.ccx
-            dist/adb-proxy-socket-win-x64.exe
-            dist/adb-proxy-socket-macos-x64
-            dist/adb-proxy-socket-macos-arm64
+          files: dist/*
+
+      - name: Mirror release to public repo
+        if: github.ref_type == 'tag' && steps.ver.outputs.public_repo != ''
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_PAT }}
+        run: |
+          set -euo pipefail
+          PRODUCT="${{ steps.ver.outputs.product }}"
+          VERSION="${{ steps.ver.outputs.version }}"
+          DISPLAY="${{ steps.ver.outputs.display }}"
+          PUBLIC="${{ steps.ver.outputs.public_repo }}"
+          TAG="v${VERSION}"
+
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::RELEASES_PAT secret is not set — cannot mirror to ${PUBLIC}."
+            exit 1
+          fi
+
+          NOTES="release-notes/${PRODUCT}-v${VERSION}.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "No ${NOTES} found — using default notes."
+            NOTES="$(mktemp)"
+            cat > "$NOTES" <<EOF
+          **${DISPLAY} v${VERSION}** — see the [README](https://github.com/${PUBLIC}#readme) for install steps, requirements, and troubleshooting.
+
+          One-line install (Windows):
+          \`\`\`powershell
+          irm https://raw.githubusercontent.com/${PUBLIC}/main/install/install.ps1 | iex
+          \`\`\`
+          EOF
+          fi
+
+          ASSETS=()
+          case "$PRODUCT" in
+            photoshop) ASSETS+=(dist/photoshop-mcp.dxt dist/photoshop-mcp-plugin.ccx) ;;
+            indesign)  ASSETS+=(dist/indesign-mcp.dxt dist/indesign-mcp-plugin.ccx) ;;
+            premiere)  ASSETS+=(dist/premiere-mcp.dxt dist/premiere-mcp-plugin.ccx) ;;
+          esac
+          ASSETS+=(dist/adb-proxy-socket-win-x64.exe dist/adb-proxy-socket-macos-x64 dist/adb-proxy-socket-macos-arm64)
+
+          if gh release view "$TAG" --repo "$PUBLIC" > /dev/null 2>&1; then
+            echo "Release $TAG already exists on $PUBLIC — replacing assets."
+            gh release upload "$TAG" --repo "$PUBLIC" --clobber "${ASSETS[@]}"
+          else
+            gh release create "$TAG" --repo "$PUBLIC" \
+              --title "$DISPLAY v$VERSION" \
+              --notes-file "$NOTES" \
+              "${ASSETS[@]}"
+          fi
+          echo "Mirrored to https://github.com/${PUBLIC}/releases/tag/${TAG}"

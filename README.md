@@ -153,8 +153,12 @@ Clone or download the source code from the [project page](https://github.com/Rin
 > **Building release artifacts yourself:** run `python scripts/build_release.py` to
 > produce `dist/photoshop-mcp.dxt` and `dist/photoshop-mcp-plugin.ccx`. The proxy
 > executables are built with `cd adb-proxy-socket && npm ci && npx pkg . --out-path ../dist`.
-> Pushing a `v*` git tag runs `.github/workflows/release.yml`, which does all of this
-> and publishes a GitHub Release automatically.
+> **Releasing:** push a per-product tag — `photoshop-v1.1.0`, `indesign-v1.2.0`, or
+> `premiere-v1.3.0` — and `.github/workflows/release.yml` builds that product, publishes
+> an archival release here, and mirrors it (tag `v1.1.0` etc.) to the matching public
+> repo (`Rinellasky/photoshop-mcp` / `indesign-mcp` / `premiere-pro-mcp`) via the
+> `RELEASES_PAT` secret. Optional public release notes: `release-notes/<product>-v<version>.md`.
+> Legacy `v*` tags build everything but stay private-only.
 
 #### 2. Install Claude Desktop
 Same as Quick Start step 2.
