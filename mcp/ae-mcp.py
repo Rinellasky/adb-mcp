@@ -1111,3 +1111,262 @@ def set_keyframe_ease(comp_id: int, layer_index: int,
         "keyIndices": key_indices
     })
     return sendCommand(command)
+
+
+# -------------------------------------------------------------------
+# Priority 5: Expressions Engine
+# ---------------------------------------------------------------------
+# Expression preset library
+# ---------------------------------------------------------------------
+# Each preset: description, params (name -> {description, default}),
+# and a build(params) -> expression string.
+
+def _preset_wiggle(p):
+    return "wiggle({freq}, {amp})".format(freq=p["frequency"], amp=p["amplitude"])
+
+
+def _preset_loop_out(p):
+    mode = p["mode"]
+    if mode not in ("cycle", "pingpong", "continue", "offset"):
+        raise ValueError("loop_out mode must be cycle, pingpong, continue, or offset")
+    return "loopOut('{mode}')".format(mode=mode)
+
+
+def _preset_inertia_bounce(p):
+    return (
+        "n = 0;\n"
+        "if (numKeys > 0) {{\n"
+        "    n = nearestKey(time).index;\n"
+        "    if (key(n).time > time) {{ n--; }}\n"
+        "}}\n"
+        "if (n == 0) {{ t = 0; }} else {{ t = time - key(n).time; }}\n"
+        "if (n > 0 && t < 4) {{\n"
+        "    v = velocityAtTime(key(n).time - thisComp.frameDuration / 10);\n"
+        "    amp = {amp};\n"
+        "    freq = {freq};\n"
+        "    decay = {decay};\n"
+        "    value + v * amp * Math.sin(freq * t * 2 * Math.PI) / Math.exp(decay * t);\n"
+        "}} else {{\n"
+        "    value;\n"
+        "}}"
+    ).format(amp=p["amplitude"], freq=p["frequency"], decay=p["decay"])
+
+
+def _preset_time_rotation(p):
+    return "time * {rate}".format(rate=p["rate"])
+
+
+def _preset_oscillate(p):
+    return "value + {amp} * Math.sin({freq} * time * 2 * Math.PI)".format(
+        amp=p["amplitude"], freq=p["frequency"])
+
+
+def _preset_value_follower(p):
+    # Follows the SAME property (the one this preset is applied to) on a
+    # leader layer, with a time delay. Expressions support matchName
+    # lookups via property("matchName") chaining.
+    delay = p["delay_seconds"]
+    leader = p["leader_layer_index"]
+    return None, delay, leader  # assembled in apply_expression_preset (needs property_path)
+
+
+EXPRESSION_PRESETS = {
+    "wiggle": {
+        "description": "Organic random motion. The workhorse of motion design.",
+        "params": {
+            "frequency": {"description": "Wiggles per second", "default": 2},
+            "amplitude": {"description": "Wiggle amount in property units (px for position, % for scale...)", "default": 30},
+        },
+        "build": _preset_wiggle,
+        "note": "Works on any dimensionality.",
+    },
+    "loop_out": {
+        "description": "Loops the property's existing keyframes forever past the last key.",
+        "params": {
+            "mode": {"description": "cycle | pingpong | continue | offset", "default": "cycle"},
+        },
+        "build": _preset_loop_out,
+        "note": "Requires at least 2 keyframes to have a visible effect.",
+    },
+    "inertia_bounce": {
+        "description": "Elastic overshoot/settle after the last keyframe - the classic bounce.",
+        "params": {
+            "amplitude": {"description": "Overshoot strength", "default": 0.05},
+            "frequency": {"description": "Oscillations per second", "default": 4.0},
+            "decay": {"description": "How fast the bounce settles (higher = faster)", "default": 8.0},
+        },
+        "build": _preset_inertia_bounce,
+        "note": "Apply to a property that has keyframes; bounce begins at each key.",
+    },
+    "time_rotation": {
+        "description": "Constant rate of change - classic use: endless rotation.",
+        "params": {
+            "rate": {"description": "Units per second (degrees/sec on rotation)", "default": 90},
+        },
+        "build": _preset_time_rotation,
+        "note": "Best on 1D properties (rotation, opacity...).",
+    },
+    "oscillate": {
+        "description": "Smooth sine-wave oscillation around the current value.",
+        "params": {
+            "amplitude": {"description": "Swing in property units", "default": 20},
+            "frequency": {"description": "Cycles per second", "default": 1.0},
+        },
+        "build": _preset_oscillate,
+        "note": "1D properties only (the scalar sine cannot add to array values).",
+    },
+    "value_follower": {
+        "description": "Follows the same property on another (leader) layer with a time delay - instant follow-through/staggered animation.",
+        "params": {
+            "leader_layer_index": {"description": "1-based index of the layer to follow", "default": None},
+            "delay_seconds": {"description": "Lag behind the leader in seconds", "default": 0.5},
+        },
+        "build": _preset_value_follower,
+        "note": "Applies to the same property_path on the leader layer.",
+    },
+}
+
+
+@mcp.tool()
+def set_expression(comp_id: int, layer_index: int, property_path: list[str],
+                   expression: str):
+    """
+    Sets an expression on a layer property - procedural animation in one
+    call, no keyframes needed. AE validates the expression; on rejection
+    the previous expression is restored and AE's error message returned.
+
+    Common patterns: "wiggle(2, 30)" (organic motion), "loopOut('cycle')"
+    (loop keyframes forever), "time * 90" (constant rotation deg/sec).
+    See apply_expression_preset for a parameterized library.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer, e.g.
+            ["ADBE Transform Group", "ADBE Position"].
+        expression (str): The expression source code.
+    """
+    command = createCommand("setExpression", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path, "expression": expression
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_expression(comp_id: int, layer_index: int, property_path: list[str]):
+    """
+    Reads a property's expression state: source, enabled flag, AE's
+    expression error (if any), and whether the property can hold an
+    expression at all.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer.
+    """
+    command = createCommand("getExpression", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def remove_expression(comp_id: int, layer_index: int,
+                      property_path: list[str]):
+    """
+    Removes the expression from a property (keyframed/static value
+    remains). Succeeds with removed=false if there was none.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer.
+    """
+    command = createCommand("removeExpression", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path
+    })
+    return sendCommand(command)
+
+
+@mcp.tool()
+def list_expression_presets():
+    """
+    Lists the expression preset library: name, description, parameters
+    (with defaults), and usage notes for each. Use with
+    apply_expression_preset.
+    """
+    catalog = {}
+    for name, spec in EXPRESSION_PRESETS.items():
+        catalog[name] = {
+            "description": spec["description"],
+            "params": {
+                pname: {"description": pspec["description"], "default": pspec["default"]}
+                for pname, pspec in spec["params"].items()
+            },
+            "note": spec.get("note", ""),
+        }
+    return catalog
+
+
+@mcp.tool()
+def apply_expression_preset(comp_id: int, layer_index: int,
+                            property_path: list[str], preset: str,
+                            params: Optional[dict] = None):
+    """
+    Applies a preset from the expression library to a property. The
+    preset compiles to an expression string server-side and is validated
+    by AE like any set_expression call.
+
+    Presets: wiggle, loop_out, inertia_bounce, time_rotation, oscillate,
+    value_follower. See list_expression_presets for parameters.
+
+    Args:
+        comp_id (int): Composition id.
+        layer_index (int): 1-based layer index.
+        property_path (list[str]): matchName path from the layer.
+        preset (str): Preset name.
+        params (dict, optional): Preset parameters; unspecified ones use
+            defaults (e.g. {"frequency": 3, "amplitude": 50}).
+    """
+    spec = EXPRESSION_PRESETS.get(preset)
+    if spec is None:
+        return {
+            "error": "Unknown preset '{p}'. Available: {names}".format(
+                p=preset, names=", ".join(sorted(EXPRESSION_PRESETS.keys())))
+        }
+
+    merged = {}
+    supplied = params or {}
+    unknown = [k for k in supplied.keys() if k not in spec["params"]]
+    if unknown:
+        return {
+            "error": "Unknown param(s) for preset '{p}': {u}. Valid: {v}".format(
+                p=preset, u=", ".join(unknown), v=", ".join(spec["params"].keys()))
+        }
+    for pname, pspec in spec["params"].items():
+        merged[pname] = supplied.get(pname, pspec["default"])
+        if merged[pname] is None:
+            return {"error": "Preset '{p}' requires param '{n}'.".format(p=preset, n=pname)}
+
+    if preset == "value_follower":
+        # Assembled here because it needs the property_path itself:
+        # follow the same property on the leader layer via matchName
+        # chaining, lagged by delay_seconds.
+        accessors = "".join('("{seg}")'.format(seg=seg) for seg in property_path)
+        expression = "thisComp.layer({idx}){acc}.valueAtTime(time - {delay})".format(
+            idx=int(merged["leader_layer_index"]), acc=accessors,
+            delay=float(merged["delay_seconds"]))
+    else:
+        try:
+            expression = spec["build"](merged)
+        except ValueError as e:
+            return {"error": str(e)}
+
+    command = createCommand("setExpression", {
+        "compId": comp_id, "layerIndex": layer_index,
+        "propertyPath": property_path, "expression": expression
+    })
+    return sendCommand(command)

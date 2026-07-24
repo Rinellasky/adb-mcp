@@ -848,6 +848,7 @@ async function addTextLayer(command) {
 async function addNullLayer(command) {
     const o = command.options || {};
     const durationSeconds = (o.durationSeconds === undefined || o.durationSeconds === null) ? "null" : JSON.stringify(o.durationSeconds);
+    const name = (o.name === undefined || o.name === null) ? "null" : JSON.stringify(o.name);
     const script = `
         (function() {
             ${AE_HELPERS}
@@ -859,7 +860,8 @@ async function addNullLayer(command) {
                 }
                 var dur = ${durationSeconds};
                 var layer = (dur !== null) ? comp.layers.addNull(dur) : comp.layers.addNull();
-                if (${JSON.stringify(o.name)} !== null) { layer.name = ${JSON.stringify(o.name)}; }
+                var nm = ${name};
+                if (nm !== null) { layer.name = nm; }
                 return JSON.stringify({success: true, index: layer.index, name: layer.name});
             } catch(e) {
                 return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
@@ -898,6 +900,7 @@ async function addAdjustmentLayer(command) {
 
 async function addShapeLayer(command) {
     const o = command.options || {};
+    const name = (o.name === undefined || o.name === null) ? "null" : JSON.stringify(o.name);
     const script = `
         (function() {
             ${AE_HELPERS}
@@ -908,7 +911,8 @@ async function addShapeLayer(command) {
                     return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
                 }
                 var layer = comp.layers.addShape();
-                if (${JSON.stringify(o.name)} !== null) { layer.name = ${JSON.stringify(o.name)}; }
+                var nm = ${name};
+                if (nm !== null) { layer.name = nm; }
                 return JSON.stringify({success: true, index: layer.index, name: layer.name});
             } catch(e) {
                 return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
@@ -951,6 +955,7 @@ async function addFootageLayer(command) {
 
 async function addCameraLayer(command) {
     const o = command.options || {};
+    const centerPoint = (o.centerPoint === undefined || o.centerPoint === null) ? "null" : JSON.stringify(o.centerPoint);
     const script = `
         (function() {
             ${AE_HELPERS}
@@ -960,7 +965,7 @@ async function addCameraLayer(command) {
                 if (comp === null) {
                     return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
                 }
-                var cp = ${JSON.stringify(o.centerPoint)};
+                var cp = ${centerPoint};
                 if (cp === null) { cp = [comp.width / 2, comp.height / 2]; }
                 var layer = comp.layers.addCamera(${JSON.stringify(o.name)}, cp);
                 return JSON.stringify({success: true, index: layer.index, name: layer.name});
@@ -976,6 +981,7 @@ async function addCameraLayer(command) {
 
 async function addLightLayer(command) {
     const o = command.options || {};
+    const centerPoint = (o.centerPoint === undefined || o.centerPoint === null) ? "null" : JSON.stringify(o.centerPoint);
     const script = `
         (function() {
             ${AE_HELPERS}
@@ -985,7 +991,7 @@ async function addLightLayer(command) {
                 if (comp === null) {
                     return JSON.stringify({error: "Composition not found: id " + ${JSON.stringify(o.compId)}});
                 }
-                var cp = ${JSON.stringify(o.centerPoint)};
+                var cp = ${centerPoint};
                 if (cp === null) { cp = [comp.width / 2, comp.height / 2]; }
                 var layer = comp.layers.addLight(${JSON.stringify(o.name)}, cp);
                 return JSON.stringify({success: true, index: layer.index, name: layer.name, lightType: String(layer.lightType)});
@@ -1086,6 +1092,7 @@ async function deleteLayer(command) {
 
 async function duplicateLayer(command) {
     const o = command.options || {};
+    const name = (o.name === undefined || o.name === null) ? "null" : JSON.stringify(o.name);
     const script = `
         (function() {
             ${AE_HELPERS}
@@ -1100,7 +1107,8 @@ async function duplicateLayer(command) {
                     return JSON.stringify({error: "Layer not found: index " + ${JSON.stringify(o.layerIndex)} + " (comp has " + comp.numLayers + " layers)"});
                 }
                 var dup = layer.duplicate();
-                if (${JSON.stringify(o.name)} !== null) { dup.name = ${JSON.stringify(o.name)}; }
+                var nm = ${name};
+                if (nm !== null) { dup.name = nm; }
                 return JSON.stringify({success: true, index: dup.index, name: dup.name, sourceLayerIndex: layer.index});
             } catch(e) {
                 return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
@@ -1630,6 +1638,113 @@ async function setKeyframeEase(command) {
     return createPacket(await executeAECommand(script));
 }
 
+// -------------------------------------------------------------------
+// Priority 5: Expressions Engine
+// - Validation-with-revert: AE can reject an expression two ways —
+//   throwing on assignment, or accepting the assignment but disabling it
+//   with prop.expressionError set. setExpression handles BOTH: on either
+//   failure the previous expression is restored and AE's own error
+//   message is returned. The property is never left with a broken
+//   expression.
+// - canSetExpression is checked before assignment for a clean error on
+//   non-expressible properties.
+
+async function setExpression(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Set Expression");
+            try {
+                ${resolvePrologue(o)}
+                if (prop.canSetExpression !== true) {
+                    return JSON.stringify({error: "Property '" + prop.name + "' (" + prop.matchName + ") cannot hold an expression."});
+                }
+                var prev = prop.expression;
+                try {
+                    prop.expression = ${JSON.stringify(o.expression)};
+                } catch (eSet) {
+                    try { prop.expression = prev; } catch (eRevert) {}
+                    return JSON.stringify({error: "Expression rejected on assignment: " + eSet.toString()});
+                }
+                var exprError = "";
+                try { exprError = prop.expressionError; } catch (eRead) {}
+                if (prop.expressionEnabled !== true || (exprError !== "" && exprError !== null && exprError !== undefined)) {
+                    var msg = (exprError !== "" && exprError !== null && exprError !== undefined)
+                        ? exprError : "expression was disabled by After Effects";
+                    try { prop.expression = prev; } catch (eRevert2) {}
+                    return JSON.stringify({error: "Expression rejected: " + msg});
+                }
+                return JSON.stringify({
+                    success: true,
+                    matchName: prop.matchName,
+                    name: prop.name,
+                    expressionEnabled: prop.expressionEnabled === true
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function getExpression(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            try {
+                ${resolvePrologue(o)}
+                var expr = "";
+                var exprError = "";
+                try { expr = prop.expression; } catch (eE) {}
+                try { exprError = prop.expressionError; } catch (eEE) {}
+                return JSON.stringify({
+                    success: true,
+                    matchName: prop.matchName,
+                    name: prop.name,
+                    canSetExpression: prop.canSetExpression === true,
+                    hasExpression: (expr !== "" && expr !== null && expr !== undefined),
+                    expression: expr,
+                    expressionEnabled: prop.expressionEnabled === true,
+                    expressionError: exprError
+                });
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
+async function removeExpression(command) {
+    const o = command.options || {};
+    const script = `
+        (function() {
+            ${AE_HELPERS}
+            app.beginUndoGroup("MCP: Remove Expression");
+            try {
+                ${resolvePrologue(o)}
+                var had = "";
+                try { had = prop.expression; } catch (eE) {}
+                if (had === "" || had === null || had === undefined) {
+                    return JSON.stringify({success: true, removed: false, message: "Property had no expression."});
+                }
+                prop.expression = "";
+                return JSON.stringify({success: true, removed: true, matchName: prop.matchName});
+            } catch(e) {
+                return JSON.stringify({error: e.toString(), line: e.line || 'unknown'});
+            } finally {
+                app.endUndoGroup();
+            }
+        })();
+    `;
+    return createPacket(await executeAECommand(script));
+}
+
 const createPacket = (result) => {
     return {
         content: [{
@@ -1694,5 +1809,8 @@ const commandHandlers = {
     getPropertyValue,
     setKeyframeInterpolation,
     setKeyframeEase,
+    setExpression,
+    getExpression,
+    removeExpression,
     getCompositions: async (command) => createPacket(await getCompositions())
 };
